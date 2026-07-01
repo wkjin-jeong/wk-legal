@@ -1,0 +1,78 @@
+{
+  "ok": true,
+  "fetchedAt": "2026-05-13T04:30:00.000Z",
+  "totalCount": 3,
+  "cases": [
+    {
+      "id": 364626,
+      "court": "서울남부지방법원",
+      "caseNo": "2026머31257",
+      "caseName": "설계비",
+      "party": "디엠피",
+      "done": false,
+      "detailPageUrl": "https://lbox.kr/user/calendar/manage?id=364626",
+      "lastUpdatedMs": 1778500000000,
+      "receptionMs": 1773532800000,
+      "errorFlag": false,
+      "errorMessage": null,
+      "nextEvent": {
+        "type": "hearing",
+        "dateMs": 1777593000000,
+        "content": "조정기일",
+        "result": "",
+        "location": "본관 조정실 413호 09:50",
+        "scheduleModified": false
+      },
+      "events": [
+        {
+          "type": "hearing",
+          "dateMs": 1777593000000,
+          "content": "조정기일",
+          "result": "",
+          "location": "본관 조정실 413호 09:50",
+          "forCalendar": true,
+          "scheduleModified": false
+        },
+        {
+          "type": "etc",
+          "dateMs": 1773532800000,
+          "content": "사건접수",
+          "result": "",
+          "location": "",
+          "forCalendar": false,
+          "scheduleModified": false
+        }
+      ]
+    },
+    {
+      "id": 360111,
+      "court": "서울중앙지방법원",
+      "caseNo": "2024가합94153",
+      "caseName": "손해배상(기)",
+      "party": "고려저축은행",
+      "done": false,
+      "detailPageUrl": "https://lbox.kr/user/calendar/manage?id=360111",
+      "lastUpdatedMs": 1778000000000,
+      "receptionMs": 1700000000000,
+      "errorFlag": false,
+      "errorMessage": null,
+      "nextEvent": null,
+      "events": []
+    },
+    {
+      "id": 350000,
+      "court": "서울서부지방법원",
+      "caseNo": "2024가단50000",
+      "caseName": "건물명도",
+      "party": "이전사용자",
+      "done": false,
+      "detailPageUrl": "https://lbox.kr/user/calendar/manage?id=350000",
+      "lastUpdatedMs": 1770000000000,
+      "receptionMs": 1700000000000,
+      "errorFlag": false,
+      "errorMessage": null,
+      "nextEvent": null,
+      "events": []
+    }
+  ]
+}

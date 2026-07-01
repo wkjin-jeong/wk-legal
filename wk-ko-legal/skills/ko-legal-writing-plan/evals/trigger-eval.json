@@ -1,0 +1,27 @@
+[
+  {"query": "다음 주 소장 들어가기 전에 청구취지 방향이랑 목차, 다툴 쟁점부터 같이 잡아보자", "should_trigger": true},
+  {"query": "피고 답변서 받았는데, 지금 우리가 뭘 입증했고 뭐가 부족한지 정리하고 다음 준비서면 어떻게 갈지 계획 세워줘", "should_trigger": true},
+  {"query": "임대차보증금 반환 사건인데 소장 구상 먼저 도와줘. 요건사실이랑 증거 매핑까지", "should_trigger": true},
+  {"query": "이 자문 건 의견서 쓰기 전에 질의사항 정리하고 쟁점 트리 좀 짜줘", "should_trigger": true},
+  {"query": "항소하려는데 항소이유서에서 뭘 다툴지(사실오인인지 법리오해인지) 구조부터 잡아줘", "should_trigger": true},
+  {"query": "변론 종결 앞두고 변론요지서 작성 계획 만들어줘. 쟁점별로 입증 정리해서", "should_trigger": true},
+  {"query": "이 사건 작업폴더에 소장이랑 상대방 준비서면, 갑·을호증 다 있어. 지금 소송 실체적으로 어떻게 돌아가는지 보고서로 정리하고 우리 입증 부족분 짚어줘", "should_trigger": true},
+  {"query": "준비서면 어떤 순서로 쓰는 게 좋을지, 어느 쟁점에 분량 집중할지 전략 좀 짜줘", "should_trigger": true},
+  {"query": "대여금 청구 의견서 골격이랑 검토 전제, 미리 확인할 사항부터 설계해줘", "should_trigger": true},
+  {"query": "상대방 주장에 대해 뭘 반박하고 어떤 증거가 더 필요한지 계획부터 세우자. 초안은 나중에 쓸게", "should_trigger": true},
+  {"query": "형사사건 변론요지서 변론 전략 좀 짜줘", "should_trigger": true},
+  {"query": "행정심판 청구서 준비하는데 쟁점 정리해줘", "should_trigger": true},
+  {"query": "영업정지 처분 받았는데 처분서 분석하고 행정소송으로 갈지 심판으로 갈지 위법사유 후보까지 설계해줘", "should_trigger": true},
+  {"query": "이 사기 사건 증거기록 보고 뭘 다툴 수 있는지 기록 분석하고 변론 계획 세워줘. 서면은 아직 쓰지 말고", "should_trigger": true},
+
+  {"query": "이 소장 초안 다 썼는데 문장이랑 청구원인 검토해서 고쳐줘", "should_trigger": false},
+  {"query": "준비서면 초안 지금 바로 써줘. 3단 논증으로 본문까지 완성해서", "should_trigger": false},
+  {"query": "자문의견서 초안 검토하고 결론 부분 문장 다듬어줘", "should_trigger": false},
+  {"query": "내 lbox 사건들 이번 주 기일 잡힌 거 있는지, 송달 됐는지 진행상황 업데이트해줘", "should_trigger": false},
+  {"query": "양도금지특약 위반 채권양도 효력 관련 대법원 판례 좀 검색해서 정리해줘", "should_trigger": false},
+  {"query": "민법 제449조랑 제450조 본문이랑 별표 받아줘", "should_trigger": false},
+  {"query": "이번 물품공급계약서 초안 새로 작성해줘", "should_trigger": false},
+  {"query": "항소이유서 초안 완성해서 바로 제출할 수 있게 써줘", "should_trigger": false},
+  {"query": "행정심판청구서 본문 지금 작성해줘. 청구취지부터 이유까지 전부", "should_trigger": false},
+  {"query": "이 판결문 요약하고 핵심 법리만 뽑아줘", "should_trigger": false}
+]

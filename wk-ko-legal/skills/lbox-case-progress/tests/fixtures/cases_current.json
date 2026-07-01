@@ -1,0 +1,125 @@
+{
+  "ok": true,
+  "fetchedAt": "2026-05-14T04:42:00.000Z",
+  "totalCount": 3,
+  "cases": [
+    {
+      "id": 356877,
+      "court": "광주지방법원",
+      "caseNo": "2026라5207",
+      "caseName": "채권압류 및 추심명령",
+      "party": "김영보",
+      "done": false,
+      "detailPageUrl": "https://lbox.kr/user/calendar/manage?id=356877",
+      "lastUpdatedMs": 1778739679412,
+      "receptionMs": 1775174400000,
+      "errorFlag": false,
+      "errorMessage": null,
+      "nextEvent": null,
+      "events": [
+        {
+          "type": "etc",
+          "dateMs": 1775174400000,
+          "content": "사건접수",
+          "result": "",
+          "location": "",
+          "forCalendar": false,
+          "scheduleModified": false
+        }
+      ]
+    },
+    {
+      "id": 364626,
+      "court": "서울남부지방법원",
+      "caseNo": "2026머31257",
+      "caseName": "설계비",
+      "party": "디엠피",
+      "done": false,
+      "detailPageUrl": "https://lbox.kr/user/calendar/manage?id=364626",
+      "lastUpdatedMs": 1778688000000,
+      "receptionMs": 1773532800000,
+      "errorFlag": false,
+      "errorMessage": null,
+      "nextEvent": {
+        "type": "date",
+        "dateMs": 1779241200000,
+        "content": "조정기일(본관 조정실 413호 10:40)",
+        "result": "",
+        "location": "본관 조정실 413호 10:40",
+        "scheduleModified": false
+      },
+      "events": [
+        {
+          "type": "send",
+          "dateMs": 1778688000000,
+          "content": "정정신청부본 송달 (원고 소송대리인 법무법인 이안)",
+          "result": "도달",
+          "location": "",
+          "forCalendar": false,
+          "scheduleModified": false
+        },
+        {
+          "type": "submit",
+          "dateMs": 1778688000000,
+          "content": "정정신청서 제출 (피고 소송대리인 전OO 당사자표시)",
+          "result": "",
+          "location": "",
+          "forCalendar": false,
+          "scheduleModified": false
+        },
+        {
+          "type": "date",
+          "dateMs": 1777593000000,
+          "content": "조정기일",
+          "result": "기일변경",
+          "location": "본관 조정실 413호 09:50",
+          "forCalendar": true,
+          "scheduleModified": true
+        },
+        {
+          "type": "doc",
+          "dateMs": 1773619200000,
+          "content": "보정명령서",
+          "result": "",
+          "location": "",
+          "forCalendar": false,
+          "scheduleModified": false
+        },
+        {
+          "type": "etc",
+          "dateMs": 1773532800000,
+          "content": "사건접수",
+          "result": "",
+          "location": "",
+          "forCalendar": false,
+          "scheduleModified": false
+        }
+      ]
+    },
+    {
+      "id": 360111,
+      "court": "서울중앙지방법원",
+      "caseNo": "2024가합94153",
+      "caseName": "손해배상(기)",
+      "party": "고려저축은행",
+      "done": true,
+      "detailPageUrl": "https://lbox.kr/user/calendar/manage?id=360111",
+      "lastUpdatedMs": 1778000000000,
+      "receptionMs": 1700000000000,
+      "errorFlag": false,
+      "errorMessage": null,
+      "nextEvent": null,
+      "events": [
+        {
+          "type": "etc",
+          "dateMs": 1778000000000,
+          "content": "판결확정",
+          "result": "원고 일부승",
+          "location": "",
+          "forCalendar": false,
+          "scheduleModified": false
+        }
+      ]
+    }
+  ]
+}
