@@ -1,0 +1,9 @@
+# 빌드 산출물 (tools/build.py 생성물) — 마켓플레이스 설치에는 불필요
+*.plugin
+
+# OS / 편집기
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
