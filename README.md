@@ -13,7 +13,7 @@
 Claude Code에서:
 
 ```
-/plugin marketplace add wkjin-jeong/wk-legal
+/plugin marketplace add https://github.com/wkjin-jeong/wk-legal
 /plugin install wk-ko-legal@wk-legal
 ```
 
