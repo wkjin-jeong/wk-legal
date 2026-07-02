@@ -165,11 +165,52 @@ def looks_like_html_error(body: str) -> bool:
 _RESULT_CODE_RE = re.compile(r"<resultCode>\s*([^<]*?)\s*</resultCode>")
 _RESULT_MSG_RE = re.compile(r"<resultMsg>\s*([^<]*?)\s*</resultMsg>")
 
+# 사용자 검증 실패 봉투 — OC 오타·미등록, 미승인 IP·도메인 등이면 resultCode 없이
+#   XML : <Response><result>사용자 정보 검증에 실패하였습니다.</result><msg>…</msg></Response>
+#   JSON: {"result": "…", "msg": "…"}
+# 형태로 반환된다. 정상 응답의 루트는 <LawSearch>·<법령> 등이며 <Response>를 쓰지 않으므로
+# 루트 + 필드 구조만으로 판별한다(메시지 문구에는 의존하지 않음).
+_ENVELOPE_ROOT_RE = re.compile(r"^\ufeff?\s*(?:<\?xml[^>]*\?>)?\s*<Response[\s>]")
+_ENVELOPE_RESULT_RE = re.compile(r"<result>\s*(.*?)\s*</result>", re.DOTALL)
+_ENVELOPE_MSG_RE = re.compile(r"<msg>\s*(.*?)\s*</msg>", re.DOTALL)
+
+
+def _find_validation_envelope_error(body: str) -> str | None:
+    """resultCode 없이 반환되는 사용자 검증 실패 봉투를 감지해 메시지를 반환, 아니면 None.
+
+    회귀 방지(2.1.1): 잘못된 OC의 <Response><result>/<msg> 오류 본문이 HTML 검사·
+    resultCode 검사를 모두 통과해 exit 0으로 정상 결과처럼 출력·캐시되던 문제.
+    """
+    if _ENVELOPE_ROOT_RE.match(body):
+        m = _ENVELOPE_RESULT_RE.search(body)
+        if not m:
+            return None
+        parts = [f'result="{m.group(1).strip()}"']
+        mm = _ENVELOPE_MSG_RE.search(body)
+        if mm and mm.group(1).strip():
+            parts.append(f'msg="{mm.group(1).strip()}"')
+        return " ".join(parts)
+    # JSON 변형 — 봉투는 항상 소형이므로 큰 정상 본문은 파싱 없이 통과시킨다
+    if body.lstrip().startswith("{") and len(body) <= 4096:
+        try:
+            obj = json.loads(body)
+        except ValueError:
+            return None
+        if isinstance(obj, dict) and "result" in obj and set(obj) <= {"result", "msg"}:
+            parts = [f'result="{str(obj["result"]).strip()}"']
+            jmsg = str(obj.get("msg", "")).strip()
+            if jmsg:
+                parts.append(f'msg="{jmsg}"')
+            return " ".join(parts)
+    return None
+
 
 def find_api_error(body: str) -> str | None:
     """응답 본문에 오류 필드(resultCode≠00 등)가 있으면 사람이 읽을 메시지를 반환, 정상이면 None.
 
     XML/JSON 양쪽을 관대하게 훑는다. 성공 코드 '00'(및 관용적 '0'/공백)이면 정상으로 본다.
+    resultCode 자체가 없는 본문은 사용자 검증 실패 봉투(<Response><result>/<msg>)인지
+    추가로 확인한다.
     """
     code = None
     msg = ""
@@ -188,7 +229,7 @@ def find_api_error(body: str) -> str | None:
             if mmj:
                 msg = mmj.group(1).strip()
     if code is None:
-        return None
+        return _find_validation_envelope_error(body)
     if code in ("00", "0", ""):
         return None
     return f"resultCode={code}" + (f' resultMsg="{msg}"' if msg else "")
@@ -431,10 +472,10 @@ def http_get(url: str, timeout: int = 20, no_cache: bool = False,
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             raw = resp.read()
     except urllib.error.HTTPError as e:
-        sys.stderr.write(f"HTTPError {e.code}: {e.reason}\nURL: {url}\n")
+        sys.stderr.write(f"HTTPError {e.code}: {e.reason}\nURL(OC 제외): {_strip_oc_from_url(url)}\n")
         sys.exit(3)
     except urllib.error.URLError as e:
-        sys.stderr.write(f"URLError: {e.reason}\nURL: {url}\n")
+        sys.stderr.write(f"URLError: {e.reason}\nURL(OC 제외): {_strip_oc_from_url(url)}\n")
         sys.exit(3)
 
     body = None
@@ -475,6 +516,11 @@ def _enforce_response_ok(body: str, url: str) -> None:
             f"ERROR: API가 오류를 반환했습니다 ({err}).\n"
             f"  URL(OC 제외): {_strip_oc_from_url(url)}\n"
         )
+        if _find_validation_envelope_error(body) is not None:
+            sys.stderr.write(
+                "  → 사용자 검증 실패: OC(인증키) 오타·미등록 또는 미승인 IP·도메인일 수 "
+                "있습니다. open.law.go.kr에서 OC 등록 상태를 확인하세요.\n"
+            )
         sys.exit(3)
 
 

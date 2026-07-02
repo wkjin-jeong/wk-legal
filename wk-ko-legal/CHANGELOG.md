@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.1.2 — 2026-07-02
+
+ko-law-api 오류 방어 회귀 수정 — 2.1.1의 "알려진 문제"(잘못된 OC 응답이 exit 0으로 통과) 해소. 별도 수정 세션의 산출물을 감사 후 통합, main 기준으로 라이브 재검증 통과.
+
+- law_api.py 검증 실패 봉투 감지 신설: OC 오타·미등록, 미승인 IP·도메인이면 API가 HTML 페이지도 `resultCode`도 아닌 `<Response><result>사용자 정보 검증에 실패하였습니다.</result><msg>…</msg></Response>`(JSON 요청이면 `{"result","msg"}`)를 반환하는데, 기존 두 검사(HTML 오류 페이지·resultCode≠00)를 모두 통과해 오류 본문이 결과처럼 출력되고 24h 캐시까지 되던 회귀. **루트 `<Response>` + `<result>` 존재 + `resultCode` 부재의 구조만으로 판별**(오류 문구에 비의존)하며, strict 명령은 OC 등록 확인 안내와 함께 exit 3, 캐시 저장도 차단. 통합 후 재검증: INVALIDKEY search XML·JSON 모두 exit 3 + stderr 안내 / 정상 search·get(민법 제449조)·expc 검색 오탐 없음 / 오류 봉투 캐시 0건
+- law_api.py OC 노출 수정: HTTPError·URLError 경로의 stderr URL에 OC(인증키)가 평문 노출되던 문제 — 다른 오류 경로와 동일하게 `_strip_oc_from_url` 적용
+- ko-law-api SKILL.md §8: 잘못된 OC 응답 형태에 검증 실패 봉투 추가
+- plugin.json 2.1.2 (9 skills, 스킬 구성 변동 없음)
+
 ## 2.1.1 — 2026-07-02
 
 스킬 3종(lbox-case-search·lbox-commentary-search·ko-law-api) 라이브 실증 검증(2026-07-02)에서 발견된 결함 수정 — 전 항목 실측 근거, 수정 후 재검증 통과.
