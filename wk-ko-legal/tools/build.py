@@ -7,6 +7,8 @@
   3. SKILL.md 가 참조하는 references/*.md 실존 여부
   4. 구명칭(korean-*) 잔존 검사 — 허용 예외: law_api.py, .env.example,
      ko-law-api/SKILL.md 의 '~/.config/korean-law-api/.env' 경로 행
+  5. SKILL.md·references/*.md 가 참조하는 shared/*.md 실존 여부
+     (예: '../../shared/기본-문체-규칙.md', 'shared/판례-인용-정책.md')
 패키징:
   evals/, __pycache__, .DS_Store, *.pyc, *.bak* 제외 후
   저장소 부모 폴더에 <name>.plugin (zip) 생성.
@@ -28,6 +30,8 @@ OLD_NAMES = ("korean-civil-litigation-drafting", "korean-legal-advisory-drafting
 ALLOWED_OLD = {"law_api.py", ".env.example"}  # 런타임 호환용 구명칭 허용 파일
 EXCLUDE_DIR = {"evals", "__pycache__"}
 EXCLUDE_FILE = {".DS_Store"}
+# shared/ 참조 패턴: "shared/<파일>.md" 또는 "../../shared/<파일>.md" (코드펜스·따옴표 무관)
+SHARED_REF = re.compile(r"(?:\.\./\.\./)?shared/([\w가-힣.\-]+\.md)")
 
 
 def fail(msgs: list[str]) -> None:
@@ -89,6 +93,24 @@ def main() -> None:
             for old in OLD_NAMES:
                 if old in line and "~/.config/korean-law-api/.env" not in line:
                     errors.append(f"{f.relative_to(ROOT)}:{i}: 구명칭 잔존 '{old}'")
+
+    # 5) shared/ 참조 실존 — 모든 SKILL.md·references/*.md 본문에서 shared 참조를 찾아
+    #    shared/ 아래 실존 검사(없으면 FAIL).
+    shared_dir = ROOT / "shared"
+    md_targets: list[Path] = []
+    for sk in skills:
+        sm = sk / "SKILL.md"
+        if sm.is_file():
+            md_targets.append(sm)
+        md_targets.extend(sorted((sk / "references").glob("*.md")))
+    for md in md_targets:
+        try:
+            body = md.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        for shared_name in set(SHARED_REF.findall(body)):
+            if not (shared_dir / shared_name).is_file():
+                errors.append(f"{md.relative_to(ROOT)}: shared 참조 파일 없음 shared/{shared_name}")
 
     if errors:
         fail(errors)

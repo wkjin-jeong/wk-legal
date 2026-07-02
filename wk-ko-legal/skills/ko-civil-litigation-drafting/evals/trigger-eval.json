@@ -1,0 +1,20 @@
+[
+  {"query": "대여금 반환 청구 소장 써줘. 원고가 5,000만 원 빌려줬는데 변제기 지나도 안 갚아", "should_trigger": true},
+  {"query": "상대방이 보낸 답변서인데 우리 원고 입장에서 반박할 준비서면 초안 작성해줘", "should_trigger": true},
+  {"query": "매매대금 청구 소장 청구취지랑 청구원인 좀 잡아서 초안까지 써줘", "should_trigger": true},
+  {"query": "임대차 명도소송 소장 초안 작성해줘. 계약 종료됐는데 임차인이 안 나가", "should_trigger": true},
+  {"query": "이 소장 초안 다 썼는데 청구원인 논리랑 법조 문어체 검토해서 고쳐줘", "should_trigger": true},
+  {"query": "피고 대리인인데 손해배상 청구 소장에 대한 답변서 초안 검토해줘. 첨부한 hwpx 봐줘", "should_trigger": true},
+  {"query": "상대방 준비서면 반박 논리 정리해서 우리 측 준비서면으로 완성해줘", "should_trigger": true},
+  {"query": "소유권이전등기 청구 소장 지금 바로 본문까지 써줘", "should_trigger": true},
+  {"query": "이 png로 첨부한 상대방 서면 읽고 재반박 준비서면 작성해줘", "should_trigger": true},
+
+  {"query": "영업정지 처분 취소 소장 써줘. 처분서 첨부할게", "should_trigger": false},
+  {"query": "변호인의견서 초안 작성해줘. 검찰에 불기소 의견 낼 거야", "should_trigger": false},
+  {"query": "은행 전자금융거래 관련 자문의견서 초안 써줘", "should_trigger": false},
+  {"query": "소장 본격적으로 쓰기 전에 청구취지 방향이랑 목차, 쟁점만 먼저 잡아줘. 초안은 나중에", "should_trigger": false},
+  {"query": "이번 물품공급계약서 초안 새로 작성해줘", "should_trigger": false},
+  {"query": "대여금 사건 관련 대법원 판례 lbox에서 검색해서 정리해줘", "should_trigger": false},
+  {"query": "민법 제618조 임대차 조문 본문 찾아줘", "should_trigger": false},
+  {"query": "내 lbox 사건들 이번 주 기일 잡힌 거 있는지 진행상황 업데이트해줘", "should_trigger": false}
+]

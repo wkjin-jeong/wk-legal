@@ -1,0 +1,18 @@
+[
+  {"query": "민법 주석서에서 채권양도 부분 해설 찾아줘", "should_trigger": true},
+  {"query": "lbox 주석서에서 이 쟁점 관련 섹션 검색해서 정리해줘", "should_trigger": true},
+  {"query": "상법 주석서에서 주식양도제한 규정 해설 찾아줘", "should_trigger": true},
+  {"query": "이 논점 실무서 검색해서 markdown 보고서로 정리해줘", "should_trigger": true},
+  {"query": "형법 주석서에서 사기죄 편취 고의 부분 찾아줘", "should_trigger": true},
+  {"query": "민사소송법 주석서에서 소송요건 관련 섹션 검색해줘", "should_trigger": true},
+  {"query": "lbox에서 주석서 찾아줘. 임대차 원상회복의무 관련으로", "should_trigger": true},
+  {"query": "주석서·실무서에서 손해배상 과실상계 서술 부분 조회해줘", "should_trigger": true},
+
+  {"query": "이 쟁점 관련 대법원 판례 lbox에서 검색해줘", "should_trigger": false},
+  {"query": "lbox.kr에서 채권양도 판결문 본문 찾아줘", "should_trigger": false},
+  {"query": "내 lbox 사건 진행상황 갱신하고 다음 기일 알려줘", "should_trigger": false},
+  {"query": "민법 제449조 조문 본문이랑 별표 찾아줘", "should_trigger": false},
+  {"query": "법제처 법령해석례 유권해석 검색해줘", "should_trigger": false},
+  {"query": "이 주석서 내용 반영해서 자문의견서 초안 완성해줘", "should_trigger": false},
+  {"query": "준비서면 초안 작성해줘. 민사 사건이야", "should_trigger": false}
+]

@@ -47,9 +47,12 @@ OC(인증키) 처리
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
+import re
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -58,6 +61,116 @@ import xml.etree.ElementTree as ET
 
 BASE_SEARCH = "https://www.law.go.kr/DRF/lawSearch.do"
 BASE_SERVICE = "https://www.law.go.kr/DRF/lawService.do"
+
+# 로컬 응답 캐시 (lawSearch.do·lawService.do GET 공통, TTL 24h).
+# 인증키(OC)가 디스크에 남지 않도록 캐시 키는 URL에서 OC 파라미터를 제거한 뒤 해시한다.
+CACHE_TTL_SECONDS = 24 * 60 * 60
+
+# versions/get-asof의 내부 검색 순회(_search_pages 등)까지 --no-cache를 전파하기 위한 플래그.
+# 명령 진입점(cmd_*)에서 args.no_cache로 1회 설정한다(헬퍼 시그니처 변경 최소화).
+_NO_CACHE = False
+
+
+def _cache_dir() -> str:
+    """캐시 디렉터리. 기본 ~/.cache/wk-legal/law-api/, WK_LEGAL_CACHE_DIR로 재정의."""
+    override = os.environ.get("WK_LEGAL_CACHE_DIR")
+    if override:
+        return os.path.expanduser(override)
+    return os.path.join(os.path.expanduser("~"), ".cache", "wk-legal", "law-api")
+
+
+def _strip_oc_from_url(url: str) -> str:
+    """URL에서 OC 파라미터만 제거한 문자열을 반환(캐시 키 산출용, 인증키 비저장)."""
+    try:
+        parts = urllib.parse.urlsplit(url)
+        pairs = urllib.parse.parse_qsl(parts.query, keep_blank_values=True)
+        pairs = [(k, v) for (k, v) in pairs if k != "OC"]
+        new_query = urllib.parse.urlencode(pairs, doseq=True)
+        return urllib.parse.urlunsplit(
+            (parts.scheme, parts.netloc, parts.path, new_query, parts.fragment)
+        )
+    except ValueError:
+        # 파싱 실패 시에도 OC 노출을 막기 위해 정규식으로 제거
+        return re.sub(r"([?&])OC=[^&]*", r"\1", url)
+
+
+def _cache_key(url: str) -> str:
+    """OC를 제거한 URL의 sha256 hex 다이제스트를 캐시 키로 사용."""
+    canonical = _strip_oc_from_url(url)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _cache_path(url: str) -> str:
+    return os.path.join(_cache_dir(), _cache_key(url) + ".body")
+
+
+def _cache_read(url: str) -> str | None:
+    """유효한 캐시가 있으면 응답 본문을, 없거나 만료·손상이면 None을 반환."""
+    path = _cache_path(url)
+    try:
+        age = time.time() - os.path.getmtime(path)
+    except OSError:
+        return None
+    if age > CACHE_TTL_SECONDS:
+        return None  # TTL 경과 — 무효
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+    except (OSError, UnicodeDecodeError):
+        # 손상 파일은 무시하고 재요청하도록 None 반환
+        return None
+
+
+def _cache_write(url: str, body: str) -> None:
+    """성공 응답 본문만 캐시에 기록. 쓰기 실패는 조용히 무시(캐시는 최적화일 뿐)."""
+    path = _cache_path(url)
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = f"{path}.{os.getpid()}.tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(body)
+        os.replace(tmp, path)  # 원자적 교체 — 부분 기록 파일이 캐시에 남지 않도록
+    except OSError:
+        return
+
+
+def looks_like_html_error(body: str) -> bool:
+    """응답이 XML/JSON이 아니라 HTML 오류 페이지인지 판정."""
+    head = body.lstrip()[:512].lower()
+    return head.startswith("<!doctype") or head.startswith("<html")
+
+
+# API 오류 필드 (references/api_reference.md: resultCode 00=성공, resultMsg=success).
+_RESULT_CODE_RE = re.compile(r"<resultCode>\s*([^<]*?)\s*</resultCode>")
+_RESULT_MSG_RE = re.compile(r"<resultMsg>\s*([^<]*?)\s*</resultMsg>")
+
+
+def find_api_error(body: str) -> str | None:
+    """응답 본문에 오류 필드(resultCode≠00 등)가 있으면 사람이 읽을 메시지를 반환, 정상이면 None.
+
+    XML/JSON 양쪽을 관대하게 훑는다. 성공 코드 '00'(및 관용적 '0'/공백)이면 정상으로 본다.
+    """
+    code = None
+    msg = ""
+    m = _RESULT_CODE_RE.search(body)
+    if m:
+        code = m.group(1).strip()
+        mm = _RESULT_MSG_RE.search(body)
+        if mm:
+            msg = mm.group(1).strip()
+    else:
+        # JSON 응답 대비 (예: "resultCode":"00")
+        mj = re.search(r'"resultCode"\s*:\s*"?\s*([0-9]+)\s*"?', body)
+        if mj:
+            code = mj.group(1).strip()
+            mmj = re.search(r'"resultMsg"\s*:\s*"([^"]*)"', body)
+            if mmj:
+                msg = mmj.group(1).strip()
+    if code is None:
+        return None
+    if code in ("00", "0", ""):
+        return None
+    return f"resultCode={code}" + (f' resultMsg="{msg}"' if msg else "")
 
 VALID_TARGETS = {
     "law": "법령(법률·시행령·시행규칙)",
@@ -265,8 +378,27 @@ def build_url(base: str, params: dict[str, str]) -> str:
     return f"{base}?{qs}"
 
 
-def http_get(url: str, timeout: int = 20) -> str:
-    """HTTP GET. UTF-8 디코딩 실패 시 EUC-KR 폴백."""
+def http_get(url: str, timeout: int = 20, no_cache: bool = False,
+             strict_errors: bool = False) -> str:
+    """HTTP GET. UTF-8 디코딩 실패 시 EUC-KR 폴백.
+
+    캐시(TTL 24h)를 http_get 계층에서 처리한다 — lawSearch.do·lawService.do 공통.
+    적중 시 stderr에 'CACHE:' 접두 한 줄을 남긴다. --no-cache는 no_cache=True로 전달된다.
+
+    strict_errors=True면 HTML 오류 페이지(OC 미등록 등)나 API 오류 필드(resultCode≠00)를
+    감지해 명확한 메시지와 함께 비정상 종료한다. 응답 본문을 스스로 파싱·검사하는
+    내부 호출부(_search_pages 등)는 False로 두어 관대하게 처리한다.
+    """
+    # 1) 캐시 조회
+    if not no_cache:
+        cached = _cache_read(url)
+        if cached is not None:
+            sys.stderr.write(f"CACHE: hit {_strip_oc_from_url(url)}\n")
+            if strict_errors:
+                _enforce_response_ok(cached, url)
+            return cached
+
+    # 2) 실제 HTTP 요청
     req = urllib.request.Request(
         url,
         headers={
@@ -284,12 +416,45 @@ def http_get(url: str, timeout: int = 20) -> str:
         sys.stderr.write(f"URLError: {e.reason}\nURL: {url}\n")
         sys.exit(3)
 
+    body = None
     for encoding in ("utf-8", "euc-kr", "cp949"):
         try:
-            return raw.decode(encoding)
+            body = raw.decode(encoding)
+            break
         except UnicodeDecodeError:
             continue
-    return raw.decode("utf-8", errors="replace")
+    if body is None:
+        body = raw.decode("utf-8", errors="replace")
+
+    # 3) 오류 검사 (엄격 모드) — 오류면 캐시하지 않고 종료
+    if strict_errors:
+        _enforce_response_ok(body, url)
+
+    # 4) 성공 응답만 캐시 — HTTP 200 & HTML 오류 페이지 아님 & API 오류 필드 없음.
+    #    (비-strict 내부 순회에서 resultCode≠00 XML을 24h 캐시하는 것을 방지)
+    if not no_cache and not looks_like_html_error(body) and find_api_error(body) is None:
+        _cache_write(url, body)
+
+    return body
+
+
+def _enforce_response_ok(body: str, url: str) -> None:
+    """HTML 오류 페이지 또는 API 오류 필드를 감지하면 안내와 함께 비정상 종료."""
+    if looks_like_html_error(body):
+        sys.stderr.write(
+            "ERROR: API가 XML/JSON이 아닌 HTML 페이지를 반환했습니다 — "
+            "OC(인증키) 미등록·오타, 일일 호출 한도 초과, 또는 파라미터 조합 오류일 수 있습니다.\n"
+            f"  URL(OC 제외): {_strip_oc_from_url(url)}\n"
+            "  → open.law.go.kr에서 OC 등록 상태를 확인하고, 파라미터를 점검하세요.\n"
+        )
+        sys.exit(3)
+    err = find_api_error(body)
+    if err:
+        sys.stderr.write(
+            f"ERROR: API가 오류를 반환했습니다 ({err}).\n"
+            f"  URL(OC 제외): {_strip_oc_from_url(url)}\n"
+        )
+        sys.exit(3)
 
 
 def maybe_pretty(body: str, fmt: str) -> str:
@@ -350,7 +515,7 @@ def cmd_search(args: argparse.Namespace) -> None:
         print(url)
         return
 
-    body = http_get(url)
+    body = http_get(url, no_cache=args.no_cache, strict_errors=True)
     output = maybe_pretty(body, args.type) if args.pretty else body
     print(output)
     if args.save_to:
@@ -453,12 +618,43 @@ def cmd_get(args: argparse.Namespace) -> None:
         print(url)
         return
 
-    body = http_get(url)
+    body = _get_body_with_jo_fallback(args, params, url)
     output = maybe_pretty(body, args.type) if args.pretty else body
     print(output)
     if args.save_to:
         with open(args.save_to, "w", encoding="utf-8") as f:
             f.write(output)
+
+
+def _get_body_with_jo_fallback(args: argparse.Namespace, params: dict[str, str],
+                               url: str) -> str:
+    """본문 조회 + JO 자동 폴백.
+
+    법령(law) 본문에서 JO를 지정했는데 결과가 비면(조문 컨테이너 부재), 대체 인코딩으로
+    1회 자동 재시도한다(예: 039000 → 0390). type=XML일 때만 판정 가능하므로 그 경우에만
+    폴백한다. 재시도 시 stderr로 알린다.
+    """
+    body = http_get(url, no_cache=args.no_cache, strict_errors=True)
+    can_fallback = (
+        args.jo and args.target == "law" and args.type.upper() == "XML"
+    )
+    if can_fallback and _jo_result_empty(body):
+        alt = alt_encode_jo(args.jo)
+        if alt and alt != params.get("JO"):
+            sys.stderr.write(
+                f"NOTE: JO={params.get('JO')} 결과가 비어 대체 인코딩 JO={alt}로 자동 재시도합니다.\n"
+            )
+            retry_params = dict(params)
+            retry_params["JO"] = alt
+            retry_url = build_url(BASE_SERVICE, retry_params)
+            retry_body = http_get(retry_url, no_cache=args.no_cache, strict_errors=True)
+            if not _jo_result_empty(retry_body):
+                return retry_body
+            sys.stderr.write(
+                "NOTE: 대체 인코딩으로도 해당 조문을 찾지 못했습니다 — "
+                "조문번호를 확인하거나 JO 없이 전체 본문을 받아 발췌하세요.\n"
+            )
+    return body
 
 
 # ---------------------------------------------------------------------------
@@ -775,6 +971,42 @@ def encode_jo(raw: str) -> str:
     return digits
 
 
+def alt_encode_jo(raw: str) -> str | None:
+    """encode_jo의 대체(폴백) 인코딩.
+
+    기본 인코딩은 6자리(조 4 + 가지조 2)이지만, 일부 응답은 4자리(조 번호만) 형태를
+    요구한다. 기본값이 6자리이고 가지조가 없으면(끝 두 자리 '00') 4자리 변형을 반환한다.
+    대체할 형태가 없으면 None.
+    """
+    primary = encode_jo(raw)
+    digits = "".join(ch for ch in primary if ch.isdigit())
+    if len(digits) == 6 and digits.endswith("00"):
+        alt = digits[:4]           # 예: 039000 -> 0390, 000200 -> 0002
+        if alt != primary:
+            return alt
+    return None
+
+
+# JO 지정 결과가 비었는지 판정할 때 찾는 '실제 조문' 태그.
+_JO_CONTENT_TAGS = ("조문단위", "조내용", "조문내용")
+
+
+def _jo_result_empty(body: str) -> bool:
+    """JO를 지정한 본문 응답에 실제 조문 내용이 하나도 없으면 True.
+
+    XML로 파싱해 조문 컨테이너 태그(조문단위/조내용/조문내용) 존재를 본다.
+    파싱 실패(HTML 오류 등)나 판정 불가 시에는 '비었다'로 단정하지 않는다(False).
+    """
+    try:
+        root = ET.fromstring(body)
+    except ET.ParseError:
+        return False
+    for tag in _JO_CONTENT_TAGS:
+        if next(root.iter(tag), None) is not None:
+            return False
+    return True
+
+
 
 # ---------------------------------------------------------------------------
 # versions / get-asof — 과거(연혁) 법령 조회 (행위시·처분시 기준)
@@ -805,7 +1037,7 @@ def _search_pages(oc: str, target: str, base_params: dict[str, str], max_pages: 
         params = dict(base_params)
         params.update({"OC": oc, "target": target, "type": "XML",
                        "display": "100", "page": str(page)})
-        body = http_get(build_url(BASE_SEARCH, params))
+        body = http_get(build_url(BASE_SEARCH, params), no_cache=_NO_CACHE)
         try:
             root = ET.fromstring(body)
         except ET.ParseError:
@@ -950,7 +1182,8 @@ def _admrul_versions(oc: str, start_id: str, date: str | None = None, max_steps:
     steps = 0
     while cur and steps < max_steps:
         body = http_get(build_url(BASE_SERVICE, {
-            "OC": oc, "target": "admrulOldAndNew", "type": "XML", "ID": cur}))
+            "OC": oc, "target": "admrulOldAndNew", "type": "XML", "ID": cur}),
+            no_cache=_NO_CACHE)
         try:
             root = ET.fromstring(body)
         except ET.ParseError:
@@ -1085,7 +1318,25 @@ def cmd_get_asof(args: argparse.Namespace) -> None:
     if args.dry_run:
         print(url)
         return
-    body = http_get(url)
+    body = http_get(url, no_cache=args.no_cache, strict_errors=True)
+    # JO 자동 폴백 — get-asof의 법령(eflaw) 본문에서 JO 지정 결과가 비면 대체 인코딩 1회 재시도.
+    if args.jo and args.target == "law" and args.type.upper() == "XML" and _jo_result_empty(body):
+        alt = alt_encode_jo(args.jo)
+        if alt and alt != params.get("JO"):
+            sys.stderr.write(
+                f"NOTE: JO={params.get('JO')} 결과가 비어 대체 인코딩 JO={alt}로 자동 재시도합니다.\n"
+            )
+            retry_params = dict(params)
+            retry_params["JO"] = alt
+            retry_body = http_get(build_url(BASE_SERVICE, retry_params),
+                                  no_cache=args.no_cache, strict_errors=True)
+            if not _jo_result_empty(retry_body):
+                body = retry_body
+            else:
+                sys.stderr.write(
+                    "NOTE: 대체 인코딩으로도 해당 조문을 찾지 못했습니다 — "
+                    "조문번호를 확인하거나 JO 없이 전체 본문을 받아 발췌하세요.\n"
+                )
     output = maybe_pretty(body, args.type) if args.pretty else body
     print(output)
     if args.save_to:
@@ -1113,6 +1364,9 @@ def _add_common(p: argparse.ArgumentParser) -> None:
                    help="응답을 파일로도 저장")
     p.add_argument("--dry-run", action="store_true", default=argparse.SUPPRESS,
                    help="요청 URL만 출력하고 호출하지 않음")
+    p.add_argument("--no-cache", dest="no_cache", action="store_true",
+                   default=argparse.SUPPRESS,
+                   help="로컬 응답 캐시(TTL 24h)를 우회하고 항상 새로 호출")
 
 
 def _apply_defaults(args: argparse.Namespace) -> argparse.Namespace:
@@ -1123,6 +1377,7 @@ def _apply_defaults(args: argparse.Namespace) -> argparse.Namespace:
         ("pretty", False),
         ("save_to", None),
         ("dry_run", False),
+        ("no_cache", False),
     ):
         if not hasattr(args, key):
             setattr(args, key, default)
@@ -1254,9 +1509,11 @@ def make_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> None:
+    global _NO_CACHE
     parser = make_parser()
     args = parser.parse_args(argv)
     args = _apply_defaults(args)
+    _NO_CACHE = bool(getattr(args, "no_cache", False))
     args.func(args)
 
 

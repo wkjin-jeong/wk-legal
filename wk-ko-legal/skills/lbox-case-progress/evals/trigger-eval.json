@@ -1,0 +1,18 @@
+[
+  {"query": "내 사건들 진행상황 갱신해줘. 이번 주 새로 잡힌 기일 있어?", "should_trigger": true},
+  {"query": "lbox 사건 업데이트해줘. 송달됐는지랑 다음기일 확인해서 보고서 갱신", "should_trigger": true},
+  {"query": "내가 등록한 lbox 사건들 요즘 어떻게 됐어? 결과 나온 거 있는지 동기화해줘", "should_trigger": true},
+  {"query": "오늘 새 기일 있는지 lbox 동기화해서 알려줘", "should_trigger": true},
+  {"query": "사건 경과 보고서 만들어줘. 기일·송달·결과 최신으로 정리해서", "should_trigger": true},
+  {"query": "lbox 사건 진행상황 최신으로 회수해서 markdown 보고서 갱신해줘", "should_trigger": true},
+  {"query": "내 사건들 다음기일이랑 최근 진행경과 업데이트해줘", "should_trigger": true},
+  {"query": "이번 달 선고 나온 내 사건 있는지 lbox에서 확인해서 사건 보고서 갱신해줘", "should_trigger": true},
+
+  {"query": "양도금지특약 위반 채권양도 관련 판례 lbox에서 검색해줘", "should_trigger": false},
+  {"query": "민법 주석서에서 이 쟁점 해설 찾아줘", "should_trigger": false},
+  {"query": "이 사건 지금 쌍방 주장·입증이 어느 정도 됐는지 실체적으로 분석하고 우리 입증 부족분 짚는 소송진행보고서 만들어줘. 작업폴더에 서면이랑 증거 다 있어", "should_trigger": false},
+  {"query": "민법 제618조 조문 본문 찾아줘", "should_trigger": false},
+  {"query": "다음 준비서면 초안 작성해줘. 민사 사건이야", "should_trigger": false},
+  {"query": "처분 취소 소장 초안 써줘. 행정소송 건", "should_trigger": false},
+  {"query": "이 사건 다음 준비서면 작성 계획이랑 목차부터 잡아줘", "should_trigger": false}
+]

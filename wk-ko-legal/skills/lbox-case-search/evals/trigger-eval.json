@@ -1,0 +1,18 @@
+[
+  {"query": "양도금지특약 위반 채권양도 효력, lbox에서 판례 검색해서 정리해줘", "should_trigger": true},
+  {"query": "lbox.kr에서 임대차보증금 반환 관련 대법원 판례 찾아줘", "should_trigger": true},
+  {"query": "이 쟁점 관련 판례 lbox에서 조사해줘. 최근 3년치로 한정해서", "should_trigger": true},
+  {"query": "사기죄 편취 고의 인정 여부, lbox에서 형사 판례 검색해줘", "should_trigger": true},
+  {"query": "lbox 판례 검색해서 재량권 일탈·남용 관련 행정 사건유형으로 찾아줘", "should_trigger": true},
+  {"query": "lbox에서 이 판결문 본문 조회해서 markdown으로 정리해줘", "should_trigger": true},
+  {"query": "손해배상 과실상계 비율 관련해서 lbox.kr에서 찾아줘", "should_trigger": true},
+  {"query": "lbox에서 최근 5년 대법원 판례로 한정해서 이 논점 조사해줘", "should_trigger": true},
+
+  {"query": "lbox 주석서에서 채권양도 부분 찾아줘", "should_trigger": false},
+  {"query": "민법 주석서·실무서에서 이 쟁점 해설 검색해줘", "should_trigger": false},
+  {"query": "내 lbox 사건들 진행상황 업데이트해줘. 이번 주 새 기일 있어?", "should_trigger": false},
+  {"query": "민법 제449조 조문 본문 찾아줘", "should_trigger": false},
+  {"query": "식품위생법 시행령 별표 서식 다운로드해줘", "should_trigger": false},
+  {"query": "대여금 반환 청구 소장 초안 작성해줘", "should_trigger": false},
+  {"query": "이 판례 검색 결과 요약해서 자문의견서 초안까지 완성해줘", "should_trigger": false}
+]

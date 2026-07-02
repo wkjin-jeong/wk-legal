@@ -1,6 +1,6 @@
 {
   "name": "wk-ko-legal",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "한국 변호사 법률 사무 스킬 번들 — 민사·행정·형사 서면 및 자문의견서 작성, 작성 계획, 법령 API 조회, lbox 판례·주석서 검색, 사건 진행 동기화 (9 skills)",
   "author": {
     "name": "Wookjin"

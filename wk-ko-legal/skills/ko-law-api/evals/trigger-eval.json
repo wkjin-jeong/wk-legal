@@ -1,0 +1,18 @@
+[
+  {"query": "민법 제839조의2 재산분할 조문 본문 찾아줘", "should_trigger": true},
+  {"query": "식품위생법 시행령이랑 시행규칙 관련 조문 본문 조회해줘", "should_trigger": true},
+  {"query": "이 고시 본문 좀 찾아줘. 금융감독규정 어디에 있는지", "should_trigger": true},
+  {"query": "도로교통법 별표 벌점 기준표 별지 서식 다운로드해줘", "should_trigger": true},
+  {"query": "이 쟁점 관련해서 법제처 법령해석례 유권해석 있는지 검색해줘", "should_trigger": true},
+  {"query": "처분 당시인 2021년에 시행되던 구 건축법 조문 본문 그때 버전으로 확인해줘", "should_trigger": true},
+  {"query": "이 조항 개정 전의 것 연혁 좀 보여줘. 신구법 비교해야 해", "should_trigger": true},
+  {"query": "○○시 주차장 조례 본문 조문 찾아줘", "should_trigger": true},
+  {"query": "자본시장법 시행령 몇 조인지랑 본문 인용할 수 있게 조회해줘", "should_trigger": true},
+
+  {"query": "양도금지특약 위반 채권양도 효력 관련 대법원 판례 lbox에서 검색해줘", "should_trigger": false},
+  {"query": "민법 주석서에서 채권양도 부분 찾아줘", "should_trigger": false},
+  {"query": "대여금 반환 청구 소장 초안 작성해줘", "should_trigger": false},
+  {"query": "변호인의견서 초안 써줘. 형사사건이야", "should_trigger": false},
+  {"query": "처분 취소 소장 초안 작성해줘. 행정소송 건", "should_trigger": false},
+  {"query": "내 lbox 사건들 이번 주 새 기일 있는지 진행상황 갱신해줘", "should_trigger": false}
+]

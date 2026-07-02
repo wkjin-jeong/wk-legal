@@ -1,0 +1,19 @@
+[
+  {"query": "변호인의견서 초안 써줘. 수사단계에서 불송치 의견 낼 거야", "should_trigger": true},
+  {"query": "변론요지서 작성해줘. 공소사실 다투면서 무죄 주장하는 걸로", "should_trigger": true},
+  {"query": "항소이유서 초안 지금 써줘. 1심 양형이 너무 무거워서 사실오인·양형부당으로 다툴 거야", "should_trigger": true},
+  {"query": "구속영장 청구됐는데 영장심사용 의견서 초안 작성해줘", "should_trigger": true},
+  {"query": "보석청구서 초안 써줘. 불구속 상태로 재판받게 해야 해", "should_trigger": true},
+  {"query": "피해자 대리로 고소장 써줘. 사기 피해 입었어", "should_trigger": true},
+  {"query": "이 변론요지서 초안 검토해줘. 공소장이랑 증거기록 첨부할게", "should_trigger": true},
+  {"query": "상고이유서 초안 작성해줘. 원심 법리오해 부분 짚어서", "should_trigger": true},
+  {"query": "양형자료 정리해서 양형 변론 부분 초안 써줘", "should_trigger": true},
+
+  {"query": "대여금 반환 청구 소장 초안 작성해줘. 민사야", "should_trigger": false},
+  {"query": "영업정지 처분 취소 소장 써줘. 행정소송 건이야", "should_trigger": false},
+  {"query": "이 사기 사건 증거기록 보고 뭘 다툴 수 있는지 분석하고 변론 계획부터 세워줘. 서면은 아직 쓰지 말고", "should_trigger": false},
+  {"query": "행위시 시행되던 구 형법 조문 본문 찾아줘", "should_trigger": false},
+  {"query": "사기죄 편취 고의 관련 형사 판례 lbox에서 검색해서 정리해줘", "should_trigger": false},
+  {"query": "회사 컴플라이언스 관련 자문의견서 초안 써줘", "should_trigger": false},
+  {"query": "내 lbox 형사사건 다음 공판기일 언제인지 진행상황 업데이트해줘", "should_trigger": false}
+]

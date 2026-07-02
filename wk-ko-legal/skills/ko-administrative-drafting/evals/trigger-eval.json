@@ -1,0 +1,19 @@
+[
+  {"query": "영업정지 처분 취소 소장 써줘. 처분서랑 사전통지서 첨부할게", "should_trigger": true},
+  {"query": "과징금 부과처분이 재량권 일탈·남용이라 다투려는데 행정소송 소장 초안 작성해줘", "should_trigger": true},
+  {"query": "집행정지 신청서 초안 지금 써줘. 처분 효력 정지시켜야 해", "should_trigger": true},
+  {"query": "행정심판 청구서 초안 작성해줘. 청구인 입장에서 위법사유까지 정리해서", "should_trigger": true},
+  {"query": "이 취소소송 준비서면 초안 검토해줘. 처분성이랑 제소기간 부분 봐줘", "should_trigger": true},
+  {"query": "시정명령 다투는 무효등확인소송 소장 본문까지 작성해줘", "should_trigger": true},
+  {"query": "처분 전에 의견제출서 내야 하는데 사전통지서 보고 초안 써줘", "should_trigger": true},
+  {"query": "재결서 받았는데 이거 근거로 행정소송 소장 초안 작성해줘", "should_trigger": true},
+  {"query": "부작위위법확인소송 소장 초안이랑 이의신청서 검토·보완해줘", "should_trigger": true},
+
+  {"query": "대여금 반환 청구 소장 써줘. 민사 사건이야", "should_trigger": false},
+  {"query": "공소사실 다투는 변호인의견서 초안 작성해줘", "should_trigger": false},
+  {"query": "행정소송 들어가기 전에 처분서 분석하고 위법사유 후보랑 목차부터 설계해줘. 초안은 아직", "should_trigger": false},
+  {"query": "처분 당시 시행되던 식품위생법 시행령 조문 본문 찾아줘", "should_trigger": false},
+  {"query": "재량권 일탈·남용 관련 행정 판례 lbox에서 검색해서 정리해줘", "should_trigger": false},
+  {"query": "금융회사 대상 제재 관련 자문의견서 초안 써줘", "should_trigger": false},
+  {"query": "내 lbox 행정사건 다음 변론기일 언제인지 진행상황 갱신해줘", "should_trigger": false}
+]
