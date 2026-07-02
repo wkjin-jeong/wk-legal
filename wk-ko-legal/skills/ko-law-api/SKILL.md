@@ -132,7 +132,7 @@ python scripts/law_api.py get --target admrul --id 2100000274812
 python scripts/law_api.py get --target ordin --mst 2124537
 ```
 
-조문번호(`JO`) 인코딩 규칙: **6자리 0-padding** (예: 제2조 → `000200`, 제390조 → `039000`).
+조문번호(`JO`) 인코딩 규칙: **6자리 0-padding** (예: 제2조 → `000200`, 제390조 → `039000`). **가지조는 '제390조의2'처럼 그대로 입력**하면 조 4자리 + 가지조 2자리(`039002`)로 자동 인코딩된다.
 일부 응답은 4자리 padding을 요구하는데, **JO 지정 결과가 비면 스크립트가 대체 인코딩(예: `039000`→`0390`)으로 1회 자동 재시도**한다(재시도 시 stderr 알림). 그래도 못 찾으면 JO 없이 전체 본문을 받아 발췌한다.
 정확한 조문번호 인코딩은 `references/api_reference.md`의 "조문번호 인코딩" 섹션 참조.
 
@@ -364,7 +364,7 @@ python scripts/law_api.py get --target expc --id 332741 --pretty
 `search`·`get`·`versions`·`get-asof`의 API 응답을 로컬에 캐시해 세션·skill 간 중복 호출을 줄인다(파일 다운로드는 캐시 대상 아님).
 
 - 기본 위치 `~/.cache/wk-legal/law-api/`, 환경변수 `WK_LEGAL_CACHE_DIR`로 재정의.
-- TTL **24시간**(mtime 기준). 성공 응답만 저장하며, 캐시 키는 **OC를 제거한 요청 URL의 sha256**이라 인증키가 디스크에 남지 않는다.
+- TTL **24시간**(mtime 기준). 성공 응답만 저장한다. 캐시 키는 **OC를 제거한 요청 URL의 sha256**이고, law.go.kr가 응답 본문(검색 응답의 상세링크 등)에 echo하는 OC도 저장 전 `OC=MASKED`로 마스킹한다 — 인증키가 디스크에 남지 않는다. 캐시 적중 응답의 상세링크는 마스킹된 값이다(스크립트 동작 무관, 링크에 키가 필요하면 `--no-cache`).
 - 적중 시 stderr에 `CACHE:` 한 줄이 표시된다. 항상 새로 받으려면 `--no-cache`.
 
 ---

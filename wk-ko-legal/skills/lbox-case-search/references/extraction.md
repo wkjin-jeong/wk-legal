@@ -31,15 +31,17 @@ SKILL.md 본문이 지시하는 시점에 해당 장만 읽는다. 모든 셀렉
     const dash = docId.indexOf('-');                 // 법원명엔 '-'가 없으므로 첫 '-'로 분리
     const court = dash > 0 ? docId.slice(0, dash) : '';
     const caseNo = dash > 0 ? docId.slice(dash + 1) : '';
-    // 카드 컨테이너(스니펫·결과배지·인용/조회수 포함): 가장 가까운 li 또는 border-b 박스
-    let card = a.closest('li');
-    if (!card) { card = a; for (let i = 0; i < 4 && card.parentElement; i++) card = card.parentElement; }
+    // 카드 컨테이너(스니펫·결과배지·인용/조회수 포함). 실측(2026-07): 결과 리스트는 ul>div 구조로
+    // li가 없어, li 폴백이 ul(리스트 전체)에 안착하면 cardText가 전 카드 동일값으로 오염된다.
+    // 카드 1개 단위 컨테이너는 div.border-b-xs. 부모 워크 폴백은 2단계까지만(카드 div = 앵커의 2단계 부모).
+    let card = a.closest('div.border-b-xs') || a.closest('li');
+    if (!card) { card = a; for (let i = 0; i < 2 && card.parentElement; i++) card = card.parentElement; }
     const cardText = (card.innerText || card.textContent || '').replace(/\s+/g, ' ').trim();
     return {
       rank: tp.rank, docId, court, caseNo,
       title: (a.textContent || '').replace(/\s+/g, ' ').trim(),
       cardText: cardText.slice(0, 400),            // 사건명·스니펫·결과배지(파기환송 등)·인용N·조회N
-      url: (court && caseNo) ? 'https://lbox.kr/precedent/' + encodeURIComponent(court) + '/' + encodeURIComponent(caseNo) : ''
+      url: (court && caseNo) ? 'https://lbox.kr/case/' + encodeURIComponent(court) + '/' + encodeURIComponent(caseNo) : ''
     };
   }).filter(Boolean);
   const seen = new Set();                            // docId 기준 dedup(혹시 모를 2벌 렌더 대비)
@@ -50,7 +52,8 @@ SKILL.md 본문이 지시하는 시점에 해당 장만 읽는다. 모든 셀렉
 ```
 
 - `cardText`에는 결과 배지(파기환송/상고기각/원고일부승/청구기각 등)와 **인용 N**(이 판례를 인용한 판례 수)·**조회 N**이 포함된다. 인용 수가 큰 대법원 판례는 선례성이 높다는 신호이므로 triage에서 가중한다.
-- `docId` → `url`(`/precedent/{법원}/{사건번호}`)은 4단계 본문 navigate에 그대로 쓴다.
+- **cardText 오염 자가진단**: 서로 다른 rank의 `cardText`(배지·인용수·조회수)가 전부 동일하면 컨테이너가 카드가 아니라 리스트 전체에 안착한 것이다 — `read_page`로 카드 단위 컨테이너 클래스를 재확인해 셀렉터를 조정한다.
+- `docId` → `url`(`/case/{법원}/{사건번호}`)은 4단계 본문 navigate에 그대로 쓴다.
 - 결과가 커서 truncated되면 `window.__lboxCards`를 `JSON.stringify(window.__lboxCards.slice(0,5))`처럼 인덱스로 분할해 받는다.
 
 ### 1-3. 페이지 순회
@@ -67,7 +70,9 @@ SKILL.md 본문이 지시하는 시점에 해당 장만 읽는다. 모든 셀렉
 
 `a[data-track-props]`가 0건이면 (ⓐ 패널이 닫힘 → "검색 결과" 카드 클릭, ⓑ 판례 탭이 비활성 → 판례 탭 클릭, ⓒ UI 변경 → `read_page`로 결과 영역 구조 확인 후 셀렉터 조정) 순으로 점검한다. 그래도 안 되면 사용자에게 알리고 중단한다.
 
-## 2. 판례 본문 추출 (`/precedent/{법원}/{사건번호}`)
+## 2. 판례 본문 추출 (`/case/{법원}/{사건번호}`)
+
+> 본문 canonical URL은 `/case/{법원}/{사건번호}`다. 실측(2026-07): 구 `/case/{법원}/{사건번호}` 경로도 `/case/…`로 자동 리다이렉트되어 여전히 작동하나, 신규 구성은 `/case/`를 쓴다.
 
 > **개편 핵심**: 본문은 이제 일반 DOM으로 렌더된다. 탭이 `visibilityState=hidden`이어도 `document.body.innerText`가 정상(전원합의체 장문 판결 실측 약 60,000자, 단락 전수 적재)이다. **개편 전의 `<script>` 페이로드 한국어 복원 방식은 폐기** — 페이지에 섞인 "최근 본 자료/추천 판례" 텍스트까지 끌어와 다른 사건 내용이 노이즈로 섞인다.
 
@@ -77,7 +82,7 @@ SKILL.md 본문이 지시하는 시점에 해당 장만 읽는다. 모든 셀렉
 
 | prefix | 내용 |
 |---|---|
-| `topheader-1` / `topheader-2` | 법원(예: 대법원) / 판결 종류(판결·결정) |
+| `topheader-1` / `topheader-2` | 법원(예: 대법원) / 판결 종류(판결·결정). **하급심은 `topheader-2`에 판결 종류 대신 재판부명(예: "제6민사부")이 올 수 있다** — 판결 종류 판정 근거로 쓰지 말 것 |
 | `before-*` | 사건정보 표(사건번호·당사자·**원심판결** 등). `before-1`이 전체 블록 |
 | `issue-*` | **판시사항** |
 | `summary-*` | **판결요지** |
@@ -154,7 +159,7 @@ SKILL.md 본문이 지시하는 시점에 해당 장만 읽는다. 모든 셀렉
     items.push({
       docId, court, caseNo,
       label: (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 70), // 예: "파기환송대법원 2012다89399"
-      url: (court && caseNo) ? 'https://lbox.kr/precedent/' + encodeURIComponent(court) + '/' + encodeURIComponent(caseNo) : ''
+      url: (court && caseNo) ? 'https://lbox.kr/case/' + encodeURIComponent(court) + '/' + encodeURIComponent(caseNo) : ''
     });
   });
   return JSON.stringify({ upperLower: items });
@@ -162,10 +167,11 @@ SKILL.md 본문이 지시하는 시점에 해당 장만 읽는다. 모든 셀렉
 ```
 
 - `label`에 관계(원고승/원고패/파기환송/상고기각/원고일부승/확정 등) + 법원 + 사건번호가 들어 있다. **하급심 본문을 visit했다면 여기 나온 상급심 `url`을 반드시 navigate**해 결론을 확인한다(SKILL 4.5단계 (가)).
+- **사이드바는 본문보다 늦게 렌더될 수 있다**(실측: 본문 적재 완료 시점에 0건이었다가 직후 채워짐). (3-a) 결과가 0건이면 짧은 텀을 두고 **1회 재실행**한 뒤에야 "상·하위 판결 없음"으로 판정한다.
 
 **(3-b) 인용된 판례 / 따름 판례 / 인용된 조문** — 사이드바의 접힘 섹션("인용된 판례 N", "따름 판례 N", "인용된 조문 N"). 펼쳐야 항목이 DOM에 들어온다.
 
 1. `computer` `screenshot`으로 사이드바에서 해당 섹션 헤더(예 "인용된 판례 25")를 찾아 클릭해 펼친다.
 2. 펼친 뒤 그 섹션 내부의 항목을 `data-track-props`(documentType `precedent`)로 추출한다 — 셀렉터·docId 분리 규칙은 (3-a)와 동일(`a[data-track-props]` 또는 `[data-track-click]` 항목). 핵심 대법원 선례만 골라 `url`로 본문을 확인하거나 "참조 대법원 선례 정리" 표에 기록한다.
 
-**원심판결 직접 구성**: 사이드바 링크가 안 보여도, 본문 (1)의 `caseInfo`(`before-1`)에 "원심판결 ○○법원 …선고 ○○○○ 판결" 텍스트가 있으니 거기서 법원·사건번호를 읽어 `/precedent/{법원}/{사건번호}`로 직접 구성해 navigate할 수 있다.
+**원심판결 직접 구성**: 사이드바 링크가 안 보여도, 본문 (1)의 `caseInfo`(`before-1`)에 "원심판결 ○○법원 …선고 ○○○○ 판결" 텍스트가 있으니 거기서 법원·사건번호를 읽어 `/case/{법원}/{사건번호}`로 직접 구성해 navigate할 수 있다.

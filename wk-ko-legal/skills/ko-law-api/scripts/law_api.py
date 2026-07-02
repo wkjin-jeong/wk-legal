@@ -134,6 +134,27 @@ def _cache_write(url: str, body: str) -> None:
         return
 
 
+def _mask_oc_in_body(body: str, url: str) -> str:
+    """캐시 저장 전 응답 본문의 OC 값을 마스킹.
+
+    law.go.kr가 검색 응답의 <법령상세링크> 등에 요청 OC를 그대로 echo하므로,
+    본문을 그대로 저장하면 인증키가 디스크에 남는다. 'OC=<값>'만 치환하며,
+    스크립트는 상세링크를 파싱하지 않으므로 동작에 영향이 없다.
+    """
+    try:
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
+        oc = (q.get("OC") or [""])[0]
+    except Exception:
+        return body
+    if not oc:
+        return body
+    masked = body.replace("OC=" + oc, "OC=MASKED")
+    quoted = urllib.parse.quote(oc, safe="")
+    if quoted != oc:
+        masked = masked.replace("OC=" + quoted, "OC=MASKED")
+    return masked
+
+
 def looks_like_html_error(body: str) -> bool:
     """응답이 XML/JSON이 아니라 HTML 오류 페이지인지 판정."""
     head = body.lstrip()[:512].lower()
@@ -433,7 +454,7 @@ def http_get(url: str, timeout: int = 20, no_cache: bool = False,
     # 4) 성공 응답만 캐시 — HTTP 200 & HTML 오류 페이지 아님 & API 오류 필드 없음.
     #    (비-strict 내부 순회에서 resultCode≠00 XML을 24h 캐시하는 것을 방지)
     if not no_cache and not looks_like_html_error(body) and find_api_error(body) is None:
-        _cache_write(url, body)
+        _cache_write(url, _mask_oc_in_body(body, url))
 
     return body
 
@@ -955,10 +976,15 @@ def encode_jo(raw: str) -> str:
     """
     조문번호 인코딩.
     - 사용자가 '제390조'처럼 입력하거나 숫자만 입력해도 6자리 zero-padding 처리.
+    - 가지조는 '제390조의2'·'390의2' 형태를 인식해 조 4자리 + 가지조 2자리(039002)로 인코딩.
     - 이미 6자리 숫자 형태면 그대로 통과.
     - 항·호 단위 인코딩(예: 03900100 = 제390조 제1항)은 스크립트에서 추측하지 않고 사용자가 명시한 값을 그대로 보낸다.
     """
     raw = raw.strip()
+    # 가지조 — 숫자 이어붙이기('제390조의2' → 390200 = 제3902조 슬롯)로 엉뚱한 조문이 되는 것을 방지.
+    m = re.fullmatch(r"제?\s*(\d{1,4})\s*조?\s*의\s*(\d{1,2})\s*조?", raw)
+    if m:
+        return m.group(1).zfill(4) + m.group(2).zfill(2)
     digits = "".join(ch for ch in raw if ch.isdigit())
     if not digits:
         return raw
