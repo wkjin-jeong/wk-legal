@@ -1,6 +1,6 @@
 ---
 name: ko-legal-advisory-drafting
-description: 대한민국 변호사가 의뢰인에게 제출하는 자문의견서(legal opinion·legal memorandum) 초안을 작성하거나 기존 초안을 검토·보완하는 skill. 주 분야는 은행·금융(은행법·자본시장법·외국환거래법·금융소비자보호법·전자금융거래법·신용정보법·특금법·금융감독규정 등)이고, 일반 민사·상사 자문(계약·회사법·담보·보증·채권양도·M&A 등)도 포괄한다. 사용자가 "자문의견서", "법률 의견서", "legal opinion·legal memo", "검토의견", "약관 검토", "은행·금융 자문", "법령 적용 검토" 등을 요청하거나 자문의뢰서·계약서·약관·내부규정·사실관계 메모(.md·.txt·.pdf·.hwpx·이미지)를 첨부하며 의견서 작성·검토를 요청하면 반드시 이 skill을 사용한다. 질의사항을 식별하고 쟁점별로 lbox-case-search를 호출해 판례를 보강하며 한국 로펌 표준 양식의 markdown 초안을 산출한다. 민사소송 서면은 ko-civil-litigation-drafting, 행정쟁송 서면은 ko-administrative-drafting, 형사 서면은 ko-criminal-drafting, 본격 작성 전 계획·쟁점 설계는 ko-legal-writing-plan 담당. 세무자문·신규 계약서 작성·단순 글쓰기는 대상이 아니다.
+description: 대한민국 변호사가 의뢰인에게 제출하는 자문의견서(legal opinion·legal memo) 초안 작성·검토 skill. 주 분야는 은행·금융(은행법·자본시장법·금융소비자보호법·신용정보법 등)이고 일반 민사·상사 자문(계약·회사법·담보·M&A 등)도 포괄한다. "자문의견서", "법률 의견서", "검토의견", "약관 검토", "은행·금융 자문" 등의 요청이나 자문의뢰서·계약서·약관·사실관계 메모 첨부 시 반드시 사용한다. 쟁점별로 lbox-case-search로 판례를 보강해 한국 로펌 표준 양식 markdown 초안을 산출한다. 소송 서면은 민사 ko-civil-litigation-drafting·행정 ko-administrative-drafting·형사 ko-criminal-drafting, 작성 전 계획·쟁점 설계는 ko-legal-writing-plan 담당. 세무자문·신규 계약서 작성·단순 글쓰기는 대상이 아니다.
 ---
 
 # 한국 변호사 자문의견서 작성·검토 보조

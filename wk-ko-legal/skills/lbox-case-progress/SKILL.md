@@ -1,6 +1,6 @@
 ---
 name: lbox-case-progress
-description: lbox.kr 에 등록된 사용자의 사건들의 진행 경과(기일·송달·결과·다음기일 등)를 Claude in Chrome 으로 회수해 Dropbox 동기화된 단일 markdown 보고서(`$LBOX_DIR/lbox-case-progress.md`, 기본 `~/Library/CloudStorage/Dropbox/AI/lbox-case-progress/lbox-case-progress.md`)로 갱신·관리한다. 사용자가 "사건 경과 업데이트", "사건 진행상황 갱신", "lbox 사건 업데이트", "내 사건들 어떻게 됐어", "오늘 새 기일 있어?", "lbox 동기화", "사건 보고서 만들어줘" 등 자신이 등록한 lbox 사건의 최신 진행상황 조회·동기화·보고서 작성을 요청하거나, 스케줄러에 의해 본 스킬이 자동 호출될 때 반드시 이 스킬을 사용한다. Chrome+lbox 로그인이 가능한 PC 에서는 fetch 모드로, 그렇지 않은 PC 에서는 클라우드 동기화된 데이터만 읽는 read-only 모드로 동작한다. 절대 기억에 의존해 사건 정보를 생성하지 말고, 실측 데이터(API 응답 또는 클라우드 동기화된 JSON)만 사용한다.
+description: lbox.kr에 등록된 사용자 사건들의 진행 경과(기일·송달·결과·다음기일)를 Claude in Chrome으로 회수해 Dropbox 동기화 단일 markdown 보고서(`$LBOX_DIR/lbox-case-progress.md`)로 갱신·관리한다. "사건 경과 업데이트", "내 사건들 어떻게 됐어", "오늘 새 기일 있어?", "lbox 동기화", "사건 보고서 만들어줘" 등의 요청이나 스케줄러 자동 호출 시 반드시 사용한다. Chrome+lbox 로그인이 가능한 PC에서는 fetch 모드, 아니면 클라우드 동기화 데이터만 읽는 read-only 모드로 동작한다. 사건 정보는 절대 기억으로 생성하지 말고 실측 데이터만 사용한다.
 ---
 
 # lbox 사건 경과 자동 보고서
