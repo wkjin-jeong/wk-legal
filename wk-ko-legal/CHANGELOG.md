@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.2.0 — 2026-07-29
+
+스킬 2종 제거 — ko-legal-writing-plan(작성 전 계획·전략 설계: 모델의 자체 계획 수립 성능 향상으로 별도 계획 스킬의 효용 소멸), lbox-case-progress(사건 진행 동기화: 별도 솔루션으로 대체). 9 → 7 skills.
+
+- 잔여 참조 정리: drafting 4종(민사·행정·형사·자문)의 description·본문에서 ko-legal-writing-plan 위임 문구 제거, lbox-case-search의 lbox-case-progress 언급 제거
+- "계획서 항목 소진 검사" 게이트는 유지하되 스킬 비의존 문구로 일반화 — 작성 계획서(출처 불문)가 입력으로 주어지면 여전히 적용
+- README(플러그인·마켓플레이스 루트)·plugin.json·marketplace.json 설명 갱신 (7 skills)
+- plugin.json 2.2.0
+
 ## 2.1.3 — 2026-07-27
 
 9개 스킬 frontmatter description 축약(합계 9,070→6,347바이트, −30%) — Claude Code 스킬 목록 상주 컨텍스트 절감(목록 예산 초과로 인한 항목 절단·라우팅 저하 예방). 스킬 본문·동작 무변경.
