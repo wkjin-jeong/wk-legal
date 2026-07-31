@@ -36,11 +36,16 @@ https://bigcase.ai/search/case?q={encodeURIComponent(검색어)}
   const items = roots.map((c, i) => {
     const t = q => { const e = c.querySelector(q); return e ? (e.innerText || '').replace(/\s+/g, ' ').trim() : ''; };
     const title = t('.search-list-card__title');
-    // "{법원} {YYYY. M. D.} 선고|자 {사건번호} 판결|결정 {사건명}" — 법원명에 공백 가능(예: 춘천지방법원 강릉지원)
-    const m = title.match(/^(.+?)\s+(\d{4}\.\s*\d{1,2}\.\s*\d{1,2}\.)\s*(선고|자)\s+(\S+)\s+(판결|결정)\s*(.*)$/);
-    const court = m ? m[1] : '', caseNo = m ? m[4] : '';
+    // "{법원} {YYYY. M. D.} 선고|자 {사건번호} [전원합의체] 판결|결정 {사건명}" — 법원명에 공백 가능(예: 춘천지방법원 강릉지원).
+    // "전원합의체" 허용을 빼먹으면 전합 카드(핵심 선례일 가능성 높음)의 URL이 빈값이 된다(실측 결함 수정).
+    const m = title.match(/^(.+?)\s+(\d{4}\.\s*\d{1,2}\.\s*\d{1,2}\.)\s*(선고|자)\s+(\S+)\s+((?:전원합의체\s+)?(?:판결|결정))\s*(.*)$/);
+    const court = m ? m[1] : '';
+    const caseNoFull = m ? m[4] : '';
+    // 병합·본소/반소 사건("2023가단300454,2024가단298404", "2024가단212740(본소),…")은
+    // 첫 사건번호(괄호 제거)만으로 접근한다 — 병합 전체 판결문이 그대로 로드됨(실측).
+    const caseNo = caseNoFull.split(',')[0].replace(/\(.*$/, '');
     return {
-      idx: i + 1, title, court, date: m ? m[2] : '', caseNo,
+      idx: i + 1, title, court, date: m ? m[2] : '', caseNo, caseNoFull,
       kind: m ? m[5] : '', caseName: m ? m[6] : '',
       snippet: t('.search-list-card__body-wrap').slice(0, 300),   // 검색어 하이라이트 포함 발췌
       badge: t('.search-list-card__footer-wrap').slice(0, 60),    // 주문 결과 배지(파기환송/원고패/기각/'-' 등)
@@ -55,7 +60,7 @@ https://bigcase.ai/search/case?q={encodeURIComponent(검색어)}
 })()
 ```
 
-- `url`이 빈 카드(정규식 불일치 — 병합 사건번호 등)는 `title`을 보고 수동 판단한다(`references/troubleshooting.md`).
+- `url`이 빈 카드(정규식 불일치)는 `title`을 보고 수동 판단한다(`references/troubleshooting.md`). 병합 사건·전원합의체는 위 JS가 이미 처리한다.
 - 결과가 커서 truncated되면 `JSON.stringify(window.__bigcaseCards.slice(0,5))`처럼 인덱스로 분할해 받는다.
 - `badge`가 `-`인 카드도 있다(주문 정보 미분류). triage에서는 스니펫을 우선한다.
 
