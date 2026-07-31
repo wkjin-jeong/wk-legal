@@ -6,7 +6,7 @@
 
 | 플러그인 | 설명 |
 |---|---|
-| [`wk-ko-legal`](./wk-ko-legal) | 한국 변호사 법률 사무 스킬 번들 (민사·행정·형사 서면·자문의견서 작성, 법령 API 조회, lbox 판례·주석서 검색 — 7 skills) |
+| [`wk-ko-legal`](./wk-ko-legal) | 한국 변호사 법률 사무 스킬 번들 (민사·행정·형사 서면·자문의견서 작성, 법령 API 조회, lbox·bigcase 판례 검색, lbox 주석서 검색 — 8 skills) |
 
 ## 설치
 

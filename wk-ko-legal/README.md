@@ -1,6 +1,6 @@
 # wk-ko-legal
 
-한국 변호사 법률 사무용 스킬 7종을 단일 플러그인으로 관리한다. 설치 후 스킬은 `wk-ko-legal:<스킬명>` 네임스페이스로 등록된다.
+한국 변호사 법률 사무용 스킬 8종을 단일 플러그인으로 관리한다. 설치 후 스킬은 `wk-ko-legal:<스킬명>` 네임스페이스로 등록된다.
 
 | 스킬 | 역할 |
 |---|---|
@@ -10,13 +10,14 @@
 | ko-legal-advisory-drafting | 자문의견서 작성·검토 |
 | ko-law-api | 국가법령정보 OPEN API 조회(법령·행정규칙·자치법규·별표·해석례) |
 | lbox-case-search | lbox.kr 판례 검색·정리 |
+| bigcase-case-search | bigcase.ai(빅케이스) 판례 검색·정리 |
 | lbox-commentary-search | lbox.kr 주석서·실무서 검색 |
 
 ## 운용 메모
 
 - ko-law-api: OC 인증키 필요(`--oc`/`LAW_GO_KR_OC`/`.env`). 기존 호환을 위해 스크립트 내부 식별자와 설정 경로(`~/.config/korean-law-api/.env`)는 구명칭을 유지한다.
 - ko-administrative-drafting은 처분시법, ko-criminal-drafting은 행위시법을 ko-law-api `get-asof`로 확인한다. 형사 양형기준은 로컬 구조화 파일(json/md, 사용자 제공 시) 우선, 없으면 양형위원회 공식 웹사이트 확인.
-- lbox 2종: Claude in Chrome + lbox.kr 로그인 전제.
+- lbox 2종·bigcase: Claude in Chrome + 해당 사이트(lbox.kr / bigcase.ai) 로그인 전제.
 - evals/는 개발용으로 패키지에 포함되지 않는다.
 
 ## 빌드·배포

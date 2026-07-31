@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.3.0 — 2026-07-31
+
+bigcase-case-search 신설 — bigcase.ai(빅케이스) 판례 검색·본문 조회·markdown 정리. 7 → 8 skills. 전 셀렉터·URL·필터 파라미터 라이브 검증(2026-07-31) 기반.
+
+- 검색: `https://bigcase.ai/search/case?q={키워드}` 직접 URL(컴포저·작업 개념 없음 — lbox 개편 전과 유사한 URL 구동형). 페이지 순회 `&page=N`, 필터도 URL 파라미터로 결정적 지정 — `case_type`(민사=1·형사=5·가사=8·행정=9·특허=10·헌법=20, `_` 연결), `court`(대법원=1000·헌재=5000), `decision_type`(전체=0·판결=1·결정=2). 기간(1/3/5년·직접 입력)은 드롭다운 UI로 적용
+- 결과 카드: `.page-search-list__list-wrap .search-list-card`(BEM). 카드에 href 없음 → 제목 텍스트("{법원} {선고일} 선고 {사건번호} 판결 {사건명}") 정규식 파싱으로 본문 URL 구성(법원명 공백 — 지원(支院) — %20 인코딩 정상 실측). 주문 배지·스니펫으로 1차 triage(lbox와 달리 인용·조회 수 없음을 명시)
+- 본문: `/cases/{법원명}/{사건번호}` — 섹션 `[class^="CaseParagraph_container"]`(판시사항·재판요지·참조조문·참조판례·주문·이유; 하급심은 주문·청구취지·이유 등 축소). 전원합의체 약 6만 자 전문 단일 렌더 실측(가상화·2벌 렌더 없음 — lbox식 dedup 불요). 해시 접미사 클래스는 프리픽스 매칭 규칙 명문화
+- 관련 자료(전부 실제 a href): 상하급심 체인(`a.appealed-case-side__item`, 현재 사건 `clicked` — 관계 라벨이 없으므로 관계·결론은 각 본문 주문에서 확인하도록 명시), 본문 참조판례·이유 내 인용 판례(`/cases/` 링크), AI 유사판례, 관련 논문(제목만 참고 목록 허용·법리 인용 금지). 하급심 visit 시 상급심 의무 조회, 3페이지+High≥10 순회, 2차 재검색, 두 곳 한계 표기 등 운용 정책은 lbox-case-search와 동일 기조 유지
+- 자물쇠 카드도 구독 계정에서는 전문 열람 가능 실측 — 구독·로그인 문제 판정 기준을 troubleshooting에 분리. `[BLOCKED]` 회피(원시 outerHTML·쿼리스트링 반환 금지) 실측 반영
+- evals/trigger-eval.json 15케이스(positive 8·negative 7 — lbox 지정 검색·주석서·법령 조회·서면 작성과의 경계 포함)
+- README(플러그인·마켓플레이스 루트)·plugin.json·marketplace.json 갱신 (8 skills), plugin.json 2.3.0
+- **lbox·bigcase 상호보완 운용 규칙(사용자 결정: "핵심 쟁점 병렬 검색") 플러그인 레벨 반영**:
+  - shared/판례-인용-정책.md §1 재구성 — "판례 검색 스킬 운용": 사이트 명시 시 해당 스킬 우선 / 미지정 시 **핵심 쟁점은 lbox+bigcase 병렬 검색·합집합·대표 선례 교차검증**(선례 안정성은 lbox 인용 수·따름 판례·관계 라벨로), **부수 쟁점은 bigcase 단독**(0건·쟁점 불일치 시 lbox 크로스 폴백) / 특성 라우팅 보조 규칙(헌법·특허·헌재·결정례·유권해석·행정심판례·논문→bigcase, 선례성 신호→lbox). 기존 skill·reference의 "lbox로 확인" 류 문구를 이 규칙으로 읽는 해석 규칙 명시(산재 문구 전면 개정 대신 canonical 우선)
+  - 판례-인용-정책 §3·§4·§5 일반화: 검색 실패 폴백에 크로스 검색 추가, 상급심 확인·사건부호 문구를 "판례 검색 스킬" 기준으로, 폐기된 개편 전 lbox 파라미터 표기(`courtType=대법원`) 제거
+  - drafting description 갱신: 행정·형사 "판례는 lbox-case-search·bigcase-case-search(행정/형사)로 확인", 자문 "쟁점별로 lbox-case-search·bigcase-case-search로 판례를 보강" (민사 description은 판례 검색 언급이 원래 없어 무변경)
+
 ## 2.2.0 — 2026-07-29
 
 스킬 2종 제거 — ko-legal-writing-plan(작성 전 계획·전략 설계: 모델의 자체 계획 수립 성능 향상으로 별도 계획 스킬의 효용 소멸), lbox-case-progress(사건 진행 동기화: 별도 솔루션으로 대체). 9 → 7 skills.

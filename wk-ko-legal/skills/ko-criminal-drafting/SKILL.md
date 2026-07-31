@@ -1,6 +1,6 @@
 ---
 name: ko-criminal-drafting
-description: 대한민국 형사사건 서면의 초안 작성·검토 skill — 수사단계 변호인의견서(불송치·불기소), 구속 전 피의자심문·구속적부심·보석 서면, 공판 의견서·변론요지서·양형 변론, 항소이유서·상고이유서, 고소장·고발장을 다룬다. "변호인의견서", "변론요지서", "항소이유서", "영장심사", "보석", "양형", "고소장 써줘" 등의 요청이나 공소장·증거기록·판결문 첨부 시 반드시 사용한다. 행위시 법령은 ko-law-api(get-asof), 판례는 lbox-case-search(형사)로 확인. 민사는 ko-civil-litigation-drafting, 행정쟁송은 ko-administrative-drafting 담당.
+description: 대한민국 형사사건 서면의 초안 작성·검토 skill — 수사단계 변호인의견서(불송치·불기소), 구속 전 피의자심문·구속적부심·보석 서면, 공판 의견서·변론요지서·양형 변론, 항소이유서·상고이유서, 고소장·고발장을 다룬다. "변호인의견서", "변론요지서", "항소이유서", "영장심사", "보석", "양형", "고소장 써줘" 등의 요청이나 공소장·증거기록·판결문 첨부 시 반드시 사용한다. 행위시 법령은 ko-law-api(get-asof), 판례는 lbox-case-search·bigcase-case-search(형사)로 확인. 민사는 ko-civil-litigation-drafting, 행정쟁송은 ko-administrative-drafting 담당.
 ---
 
 # 한국 형사 서면 작성·검토 보조

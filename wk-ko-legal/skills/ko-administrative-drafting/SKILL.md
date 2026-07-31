@@ -1,6 +1,6 @@
 ---
 name: ko-administrative-drafting
-description: 대한민국 행정쟁송 서면의 초안 작성·검토 skill — 행정소송(취소·무효등확인·부작위위법확인·당사자소송) 소장·준비서면, 행정심판 청구서·보충서면, 집행정지 신청서, 의견제출서·이의신청서를 원고·청구인 측 기준으로 다룬다. "처분 취소", "행정소송", "행정심판", "집행정지", "처분성", "재량권 일탈·남용" 등의 표현이나 처분서·재결서 첨부와 함께 작성·검토를 요청하면 반드시 사용한다. 처분 당시 법령은 ko-law-api(get-asof), 판례는 lbox-case-search(행정)로 확인. 민사는 ko-civil-litigation-drafting, 형사는 ko-criminal-drafting 담당.
+description: 대한민국 행정쟁송 서면의 초안 작성·검토 skill — 행정소송(취소·무효등확인·부작위위법확인·당사자소송) 소장·준비서면, 행정심판 청구서·보충서면, 집행정지 신청서, 의견제출서·이의신청서를 원고·청구인 측 기준으로 다룬다. "처분 취소", "행정소송", "행정심판", "집행정지", "처분성", "재량권 일탈·남용" 등의 표현이나 처분서·재결서 첨부와 함께 작성·검토를 요청하면 반드시 사용한다. 처분 당시 법령은 ko-law-api(get-asof), 판례는 lbox-case-search·bigcase-case-search(행정)로 확인. 민사는 ko-civil-litigation-drafting, 형사는 ko-criminal-drafting 담당.
 ---
 
 # 한국 행정쟁송 서면 작성·검토 보조
