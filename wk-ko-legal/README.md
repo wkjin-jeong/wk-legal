@@ -20,6 +20,10 @@
 - lbox 2종·bigcase: Claude in Chrome + 해당 사이트(lbox.kr / bigcase.ai) 로그인 전제.
 - evals/는 개발용으로 패키지에 포함되지 않는다.
 
+## 라이선스
+
+저장소 루트의 [LICENSE.md](../LICENSE.md)(제한적 사용권 — 사용·수정·재사용 자유, 원형 잔존 상태의 재배포 금지)가 적용된다.
+
 ## 빌드·배포
 
 ```bash
