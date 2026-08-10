@@ -10,7 +10,7 @@
   5. SKILL.md·references/*.md 가 참조하는 shared/*.md 실존 여부
      (예: '../../shared/기본-문체-규칙.md', 'shared/판례-인용-정책.md')
 패키징:
-  evals/, __pycache__, .DS_Store, *.pyc, *.bak* 제외 후
+  evals/, __pycache__, .DS_Store, .env, *.pyc, *.bak* 제외 후
   저장소 부모 폴더에 <name>.plugin (zip) 생성.
 
 사용: python3 tools/build.py [--no-zip]
@@ -29,7 +29,7 @@ OLD_NAMES = ("korean-civil-litigation-drafting", "korean-legal-advisory-drafting
              "korean-legal-writing-plan", "korean-law-api")
 ALLOWED_OLD = {"law_api.py", ".env.example"}  # 런타임 호환용 구명칭 허용 파일
 EXCLUDE_DIR = {"evals", "__pycache__"}
-EXCLUDE_FILE = {".DS_Store"}
+EXCLUDE_FILE = {".DS_Store", ".env"}  # .env는 실제 인증키 — 배포 zip에 포함 금지
 # shared/ 참조 패턴: "shared/<파일>.md" 또는 "../../shared/<파일>.md" (코드펜스·따옴표 무관)
 SHARED_REF = re.compile(r"(?:\.\./\.\./)?shared/([\w가-힣.\-]+\.md)")
 

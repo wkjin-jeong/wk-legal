@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.4.2 — 2026-08-10
+
+ko-law-api 문서-실체 불일치 수정 — SKILL.md §2와 build.py 구명칭 허용 예외 목록이 전제하는 `.env.example`이 저장소·빌드 산출물 zip 어디에도 실존하지 않던 결함을 파일 실제 생성(권장안)으로 해소.
+
+- **skills/ko-law-api/.env.example 신설**: SKILL.md의 `.env` 형식 규칙('#' 주석·인라인 주석·export/따옴표 허용)과 자동 탐색 경로 요약 주석 + `LAW_GO_KR_OC=` 빈 값 한 줄. 빈 값은 `resolve_oc()`의 falsy 검사에 걸러지므로 미기입 상태로 복사해도 더미 값 호출 없이 친절 안내 종료(SKILL.md 기존 약속 유지)
+- **build.py 패키징 제외에 `.env` 추가**: pathlib `rglob("*")`는 dotfile을 포함하므로, SKILL.md가 안내하는 skill 폴더 `.env`(실제 인증키)가 배포 zip에 포함될 수 있던 잠재 유출 경로 차단(`.env.example`은 계속 포함)
+- plugin.json 2.4.2 (스킬 구성 변동 없음)
+
 ## 2.4.1 — 2026-08-10
 
 ko-legal-advisory-drafting 04-쟁점분석-방법론 §2.2에 잔존하던 폐기된 lbox 개편 전 URL 파라미터 표기 제거. 스킬 구성·동작 변동 없음.
