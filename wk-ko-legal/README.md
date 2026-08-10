@@ -4,7 +4,7 @@
 
 | 스킬 | 역할 |
 |---|---|
-| ko-civil-litigation-drafting | 민사 서면(소장·답변서·준비서면) 작성·검토 |
+| ko-civil-litigation-drafting | 민사 서면(소장·답변서·준비서면, 보전·집행·담보·절차 신청서) 작성·검토 |
 | ko-administrative-drafting | 행정쟁송 서면(행정소송·행정심판·집행정지·처분 전 단계) 작성·검토 — 원고·청구인 측 |
 | ko-criminal-drafting | 형사 서면(수사·공판·상소 변호, 고소·고발 대리) 작성·검토 |
 | ko-legal-advisory-drafting | 자문의견서 작성·검토 |
