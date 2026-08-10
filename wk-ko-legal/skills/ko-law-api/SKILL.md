@@ -375,7 +375,7 @@ python scripts/law_api.py get --target expc --id 332741 --pretty
 
 - `ko-civil-litigation-drafting`: 소장·답변서·준비서면 작성 시 청구원인·법리 부분에서 법령 인용
 - `ko-legal-advisory-drafting`: 자문의견서의 "관련 법령" 섹션 정확성 확보
-- `lbox-case-search`: 판례에서 인용된 법령을 본 skill로 본문 조회하여 교차 확인
+- `lbox-case-search`·`bigcase-case-search`: 판례에서 인용된 법령을 본 skill로 본문 조회하여 교차 확인
 - 행정·형사 서면: 처분 당시·행위 시 법령은 본 skill의 `versions`/`get-asof`로 기준일 시행본을 확보해 구법 표기로 인용(5장)
 
 협업 흐름 예시:

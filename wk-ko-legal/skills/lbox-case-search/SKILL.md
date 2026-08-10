@@ -1,6 +1,6 @@
 ---
 name: lbox-case-search
-description: 한국 판례 검색 사이트 lbox.kr에서 사용자 질의와 관련된 판례를 검색하고 판결문 본문을 조회하여 markdown으로 정리합니다. 'lbox에서 검색', 'lbox 판례', 'lbox.kr에서 찾아줘' 등 lbox 관련 검색·조사 요청 시 반드시 이 Skill을 사용하세요. 사건유형(민사/형사/행정/가사)·법원(대법원)·최근 선고기간(1/3/5년)을 선택 지정할 수 있습니다.
+description: 한국 판례 검색 사이트 lbox.kr에서 사용자 질의와 관련된 판례를 검색하고 판결문 본문을 조회하여 markdown으로 정리합니다. 'lbox에서 검색', 'lbox 판례', 'lbox.kr에서 찾아줘' 등 lbox 관련 검색·조사 요청 시 반드시 이 Skill을 사용하세요. 사건유형(민사/형사/행정/가사)·법원(대법원)·최근 선고기간(1/3/5년)을 선택 지정할 수 있습니다. bigcase.ai 검색은 bigcase-case-search 담당.
 ---
 
 # lbox-case-search

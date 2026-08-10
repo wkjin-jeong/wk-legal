@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.4.4 — 2026-08-10
+
+판례 검색원 이원화(2.3.0) 이후 잔존한 lbox-case-search 하드코딩 전수 검사·중립화 — `shared/판례-인용-정책.md` §1의 재해석 조항("기존 lbox 문구는 2종 병용으로 읽는다")이 닿지 않는 정책 미참조 reference 사각지대와 정책 충돌 문구를 "판례 검색 스킬(lbox-case-search·bigcase-case-search)" 중립 표기로 교체. 18파일 28개소, 스킬 구성 변동 없음.
+
+- **배타 검증 문구 교체(정책과 능동 충돌 3파일)**: 민사 05-형식요건-체크리스트("본 skill에서 인용한 모든 판례는 lbox-case-search로 검증·확보된 것이어야" 2개소), 민사 06-문체-인용-가이드·자문 05-문체-인용-가이드("lbox-case-search로 확인한 …만 인용" + §8.1 인용 검증 체크리스트 2개소) — 정책 §1.1이 부수 쟁점에 bigcase 단독 검색을 지시하면서 최종 점검이 bigcase 확보 인용을 결함으로 판정·교체 지시하던 모순 해소
+- **방화벽 사각지대 해소(판례-인용-정책 미참조 reference 8파일)**: 민사 03-준비서면-template·04-쟁점별-논증구조, 행정 04-집행정지신청서-template·06-쟁점별-논증구조, 형사 01-변호인의견서-template·06-쟁점별-논증구조, 자문 01-자문의견서-template·02-금융법령-체크리스트 — 2종 병기 + 검색원 선택 규칙(`shared/판례-인용-정책.md` 1.1) 포인터 삽입
+- **SKILL.md 워크플로 lbox 고정 단계 정비**: 민사·행정·형사 §6 반박 노선 4단계("lbox-case-search로 판례 보강")와 행정 §6 2단계 "(판례는 lbox로 확인)"를 중립화, 자문 §6 2단계의 참조 대상을 "lbox-case-search skill의 5.5단계" → 정책 1.1(검색원)·4.(재검색·폴백)로 교체
+- **자문 04-쟁점분석-방법론 §2 전면 중립화**: 표제·서두 중립 표기, §2.1에 검색원 선택 원칙 신설(핵심 쟁점 lbox·bigcase 병렬 / 부수 쟁점 bigcase 단독), §2.4 상급심 확인에 bigcase 상하급심 체인 병기, §2.5 재검색에 크로스 검색 폴백(정책 4.) 반영
+- **상호 핸드오프·병기 보완**: 민사 SKILL description에 "판례는 lbox-case-search·bigcase-case-search(민사)로 확인" 추가(행정·형사·자문과 동일 패턴 — 종전 민사 스킬은 전체에서 bigcase 언급 0회), lbox-case-search description에 "bigcase.ai 검색은 bigcase-case-search 담당" 역방향 핸드오프 신설(종전 bigcase→lbox 단방향), ko-law-api §9 협업 목록에 bigcase-case-search 병기
+- 잔존 lbox 단독 표기는 의도분만 유지(grep 전수 확인): 재해석 조항이 같은 문단에서 작동하는 drafting 4종 SKILL 총론·검토 모드, evals.json의 사이트 명시 프롬프트(§1.1 "사이트 명시 시 그 사이트만"에 부합), lbox-case-search·lbox-commentary-search 자체 파일
+- plugin.json 2.4.4 (스킬 구성 변동 없음)
+
 ## 2.4.3 — 2026-08-10
 
 LLM-wiki 구조 개편(git화·`문헌/` 컬렉션 신설·루트 진입 문서 신설·서면DB doc_id 익명화) 추종 — `shared/LLM-wiki-연동-정책.md` 경로 정정·정합화. 스킬 구성·동작 변동 없음.
