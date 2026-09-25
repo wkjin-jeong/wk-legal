@@ -7,6 +7,7 @@
   {"query": "lbox에서 이 판결문 본문 조회해서 markdown으로 정리해줘", "should_trigger": true},
   {"query": "손해배상 과실상계 비율 관련해서 lbox.kr에서 찾아줘", "should_trigger": true},
   {"query": "lbox에서 최근 5년 대법원 판례로 한정해서 이 논점 조사해줘", "should_trigger": true},
+  {"query": "양도금지특약 위반 채권양도 효력 관련 대법원 판례 찾아줘", "should_trigger": true, "note": "사이트 미지정 — 판례DB가 없는 환경 기준(두 검색 스킬 병렬). 판례DB가 연결된 환경에서는 판례DB를 먼저 쓴다"},
 
   {"query": "lbox 주석서에서 채권양도 부분 찾아줘", "should_trigger": false},
   {"query": "민법 주석서·실무서에서 이 쟁점 해설 검색해줘", "should_trigger": false},

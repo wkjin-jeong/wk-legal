@@ -9,7 +9,7 @@ lbox.kr 주석서·실무서 검색에서 사용자 질의와 관련된 주석�
 
 이 Skill은 `lbox-case-search`(판례 검색)의 자매 Skill이며, 같은 lbox.kr 개편판 Chrome 자동화 패턴을 따릅니다.
 
-> **2026.6 사이트 전면 개편 반영본.** 개편 전 방식은 더 이상 동작하지 않습니다. 핵심 변화: ① 검색이 직접 URL(`/v2/search/commentary?...`)이 아니라 홈 **컴포저 "검색" 모드 → 작업(Task) → 결과 패널의 "주석·실무서" 탭**으로 바뀜, ② 숫자 `statute` 코드·`document=COMMENTARY/PRACTICAL` 파라미터 폐지 → **법령 이름·문서유형 필터**(`/book/list` 또는 패널 필터)로 대체, ③ 본문 viewer URL이 `/book/{bookId}?tocId=…&nodeId=…&volumeHistoryId=…` 형식, ④ 본문 페이지가 **2벌로 렌더**되어 dedup이 필요. 변경점 요약은 문서 끝 표를 참고하세요.
+> lbox.kr 2026.6 개편판 기준입니다 — 검색은 홈 컴포저 "검색" 모드 → 작업(Task) → 결과 패널의 "주석·실무서" 탭, 법령은 이름·문서유형 필터로 좁히고, 본문은 `/book/{bookId}?tocId=…&nodeId=…&volumeHistoryId=…`(2벌 렌더 — node-id dedup). 개편 전 방식(`/v2/search/commentary`, 숫자 `statute` 코드)은 쓰지 마세요(변경 이력은 CHANGELOG 2.0.0).
 
 ## 사전 조건 및 환경 점검
 
@@ -119,19 +119,3 @@ lbox.kr은 구독자에게 본문 직접 인용을 허용합니다. 분량을 �
 
 증상별 대응은 `references/troubleshooting.md` 참조. 핵심: ① 본문은 `data-node-id`/`data-viewer-type="header"` 형제 수집으로 읽고 **2벌 렌더는 node-id로 dedup**, ② `navigate`/클릭 뒤에는 batch 안에서 `computer` `wait`로 기다린 뒤 추출(timeout이 나면 그 페이지만 분리 호출), ③ 결과 JSON에 raw URL·쿼리스트링·검색 키워드를 담지 말 것(`[BLOCKED]` 회피), ④ "주석·실무서"는 **패널 탭**을 누를 것(좌측 내비 링크 아님).
 
-## 금지 사항
-
-- 본문에서 확인되지 않은 법리를 지어내지 마세요. 모든 진술은 visit한 주석서·실무서 본문에서 추적 가능해야 합니다.
-- 검색어만 우연히 일치하고 쟁점이 다른 섹션을 답변에 끼워 노이즈를 만들지 마세요.
-- 출처 표기(도서명·저자·판본) 없이 본문을 그대로 옮기지 마세요.
-- 개편 전의 폐기된 방식(직접 검색 URL `/v2/search/commentary`, 숫자 `statute` 코드)을 사용하지 마세요.
-
-## 개편 전 대비 변경점 (요약)
-
-| 항목 | 개편 전 | 개편 후(2026.6) |
-|---|---|---|
-| 검색 진입 | `lbox.kr/v2/search/commentary?document=…&statute=…&query=…` | 홈 컴포저 "검색" → `/task/{id}` → 패널 **"주석·실무서" 탭** |
-| 법령/문서유형 | 숫자 `statute` 코드 + `document=COMMENTARY/PRACTICAL` | **법령 이름·문서유형 필터**(`/book/list` 또는 패널 칩) — 숫자 코드 폐지 |
-| 결과 카드 | `<li>`(카드 wrapper + `.line-clamp-4` 스니펫 + `<ol>` breadcrumb) | `a[data-track-props]`(documentType **`scholar`**, docId) + `div.border-b-xs` 카드(제목+도서메타/스니펫/breadcrumb) |
-| 본문 URL | viewer(쿼리에 nodeId·volumeId·tocId) | `/book/{bookId}?tocId=…&nodeId=…&volumeHistoryId=…` |
-| 본문 추출 | `[data-node-id]` 헤더→다음 `[data-viewer-type="header"]` 형제 수집 | **동일** (단 페이지가 2벌 렌더 → node-id dedup, 섹션이 큰 챕터면 키워드 발췌) |

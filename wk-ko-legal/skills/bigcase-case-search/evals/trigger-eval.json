@@ -7,6 +7,7 @@
   {"query": "빅케이스에서 이 판결문 본문 조회해서 markdown으로 정리해줘", "should_trigger": true},
   {"query": "손해배상 과실상계 비율 관련해서 bigcase.ai에서 찾아줘", "should_trigger": true},
   {"query": "bigcase에서 대법원 결정례로 한정해서 이 논점 조사해줘", "should_trigger": true},
+  {"query": "양도금지특약 위반 채권양도 효력 관련 대법원 판례 찾아줘", "should_trigger": true, "note": "사이트 미지정 — 판례DB가 없는 환경 기준(두 검색 스킬 병렬). 판례DB가 연결된 환경에서는 판례DB를 먼저 쓴다"},
 
   {"query": "lbox에서 부당해고 판례 검색해줘", "should_trigger": false},
   {"query": "lbox.kr에서 이 쟁점 대법원 판례 찾아줘", "should_trigger": false},

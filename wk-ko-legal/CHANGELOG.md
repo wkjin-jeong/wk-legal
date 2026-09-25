@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.4.15 — 2026-09-26
+
+2026-09-25 점검 보고서 §7 3단계(구조) — build.py 드리프트 린트, 형사·행정 문헌 훅, 이력 표 이관, trigger eval 갱신, 컴팩션 대비. 스킬 구성 변동 없음.
+
+- **build.py 드리프트 린트(검증 6)**: 개정 뒤 일부 파일에 남기 쉬운 낡은 표현을 FAIL로 — lbox 단독 확인('lbox에서/로 (재)확인', 재해석 조항 줄 제외), '–라 할 것입니다' 권장(금지·지양을 설명하는 줄 제외), 결정 표기 '. 자', 옛 Chrome 도구명 `mcp__Claude_in_Chrome__`, `python` 실행(→ python3), JS `slice(0,5)` 분할 반환, SKILL.md의 행정규칙일련번호(13자리) 고정 예시. 대상은 SKILL.md·references·shared·README(CHANGELOG·tools·evals 제외). 새 전수 grep 대상은 `DRIFT_PATTERNS`에 한 줄 추가
+- **build.py 절 포인터 실존 검사(검증 7)**: '`references/…md` 2장'·'`shared/…md` 1.1-5'·'06 3장'이 가리키는 제목(## 2. / ### 1.1 / ### 1-3.)이 대상 문서에 있는지 — 제목이 없으면 상위 절 안의 번호 목록 항목('4.3' = 4장의 셋째 항목)까지 인정. 임시 사본에 과거 드리프트 10종을 넣어 전부 검출되는 것을 확인. 첫 적용에서 오탐 2건(`LLM-wiki-연동-정책.md` 4.3 — 목록 항목)을 계기로 목록 항목 인정 규칙 추가. 린트 코드가 플러그인 이름 변수를 덮어써 패키지 이름이 틀어지던 것을 같은 버전에서 수정
+- **문헌 훅(형사·행정)**: LLM-wiki-연동-정책 3.을 분야 공통으로 재작성 — 도서는 카탈로그(`book_id`·`title`)로, 절·면은 문헌 색인 `문헌/_색인.sqlite`(`pages_fts` 면 단위 전문 검색·`sections`·`sec_cases`/`page_cases`, 읽기 전용)로 찾고, 색인이 없으면 `00_서지_목차.md`로. 민사 3권 장 범위 하드코딩 제거, 인용 표기는 `문헌/_인용규약.md` 2.의 도서별 형식. trigram 색인이라 2자 용어는 `MATCH` 0건 — LIKE로(실측: '보석' MATCH 0면·LIKE 92면). 행정 SKILL은 행정 실무제요(관할·피고적격·대상적격·제소기간·집행정지 등)와 준용 부분의 민사소송 실무제요, 형사 SKILL은 형사 실무제요(영장·구속·보석·공판·증거·상소) 조회를 연결(없으면 ko-law-api 등으로 폴백). 폴백 표도 분야 공통으로
+- **이력 표 이관**: lbox-case-search·lbox-commentary-search의 '개편 전 대비 변경점' 표를 이 파일 2.0.0 항목 아래로 옮기고, 개편 배너를 한 줄로(구 본문 URL `/precedent/…` 서술을 현행 `/case/…`로), 본문을 되풀이하던 '금지 사항' 절 삭제 — SKILL.md 각 2.6K·1.7K자 감소
+- **trigger eval 갱신**: 민사·행정·형사의 "초안은 아직, 목차·계획부터" 요청 3건을 음성 → 양성으로(계획 스킬 제거 뒤 현재 description상 drafting 담당), drafting 3종에 질의형 음성(요건만 묻기) 1건씩, lbox·bigcase에 사이트 미지정 판례 요청 1건씩 추가(양성 — 판례DB가 없는 환경 기준, `note` 필드에 명시). 자문 evals 3건 프롬프트의 'lbox-case-search로 검색' 지시를 출처 중립으로, 기대 산출을 '원문 전재(문미 괄호 출처)'로
+- **description**: drafting 4종에 "서면 없이 요건·절차(개념)만 묻는 질문은 대상이 아니다"(질의형 과트리거 방지), lbox·bigcase에 "사이트를 지정하지 않은 판례 검색 요청도 대상 — 판례DB가 있으면 판례DB 먼저, 없으면 두 검색 스킬을 함께 써서 한 보고서로"
+- **판례DB가 없는 환경은 곧바로 검색 스킬**(사용자 지시 2026-09-26): 판례-인용-정책 1.1에 판례DB 부재 판정(원격 MCP 도구 없음 + 위키 `판례DB/_색인.sqlite` 없음, 착수 시 1회)과 그때의 경로 — 판례DB 단계를 건너뛰고 곧바로 브라우저 검색 스킬(서면 작성은 패키지 모드: 핵심 쟁점 lbox·bigcase 병렬, 부수 쟁점 bigcase → lbox), 1.2의 판례DB 조사 절차는 검색 스킬 절차가 대신 — 를 명시하고, 4.(폴백)·drafting 4종 사전 조사 단락·description·위키 연동 폴백 표에 같은 취지를 넣음. **사이트를 지정하지 않은 직접 조사 요청**은 판례DB가 없으면 lbox·bigcase를 모두 검색해 보고서 하나(`case-search-<키워드>-<날짜>.md`, 같은 판례는 한 번·원천 표시)로 합친다(사용자 결정 — 두 검색 스킬 1단계, 정책 1.1)
+- **자문 검색어 예시**: eval 3건과 같은 주제였던 예시 3건을 다른 주제(기한이익 상실 약관 설명의무·근보증 범위·적합성 원칙)로 교체
+- **컴팩션 대비**: drafting 4종 제목 바로 아래에 "대화가 요약되면 이 문서는 앞부분만 다시 붙으므로 최종 검수·산출 전에 skill을 다시 불러 뒷부분을 읽는다" 한 줄
+- **README**: 'evals는 패키지에 포함되지 않는다'를 '.plugin(zip)에서만 빠지고 마켓플레이스 설치본에는 있다'로 정정, 드리프트 린트 안내
+
 ## 2.4.14 — 2026-09-26
 
 2026-09-25 점검 보고서 §7 2단계 — **ko-law-api 출력 축약**(§3.2-4 잔여: search 표 출력·`get --text`). Cowork는 세션마다 VM이 새로 떠 캐시가 사실상 무효라, 호출당 출력량을 줄이는 쪽이 효과가 크다. 스킬 구성 변동 없음.
@@ -292,6 +307,28 @@ lbox.kr 전면 개편(2026.6, "AI 업무 환경" 전환) 대응 — lbox 연동 
 - lbox-commentary-search: 결과 패널의 "주석·실무서" 탭(`role="tab"` 버튼 — 좌측 내비 `/book/list` 링크와 구분) 기반. 카드 documentType `scholar`, 본문 URL `/book/{bookId}?tocId=…&nodeId=…&volumeHistoryId=…`. 섹션 추출은 종전 `data-node-id`→`data-viewer-type="header"` 형제 수집 유지(2벌 dedup·큰 챕터 키워드 발췌 추가). **숫자 `statute` 코드 폐지** → 법령 이름·문서유형 필터로 대체: `references/statute-map.md` 삭제, `references/filter-map.md` 신설.
 - lbox-case-progress: 핵심 API `/api/caseManage/caseEvents`는 그대로 동작(라이브 32건 검증). 개편 드리프트 3종 수정 — ① 2단계 컨텍스트 페이지 `/v2/case-events/list`(폐지·404) → `/project?tab=case-schedule`, 로그인 판정을 페이지 렌더가 아니라 `fetch_cases.js`의 `ok:false`(API) 기준으로 일원화; ② 오류 플래그 필드명 `caseNotExist`/`errorOccurred` → `isCaseNotExist`/`isErrorOccurred`(구명 하위호환 유지) — 종전 errorFlag가 항상 false였던 버그 수정; ③ 개별 사건 딥링크 폐지로 `detailPageUrl`을 사건일정 목록 페이지(`/project?tab=case-schedule`)로 통일. Python 스크립트·정규화 스키마 불변.
 - plugin.json 2.0.0(메이저 — lbox 사이트 개편 대응 대규모 갱신). 스킬 수·구성 변동 없음(9 skills). ko-* 서면·자문·법령 API 스킬 6종은 변경 없음.
+
+#### 개편 전 대비 변경점 — lbox-case-search (2.4.15에 SKILL.md에서 이관)
+
+| 항목 | 개편 전 | 개편 후(2026.6) |
+|---|---|---|
+| 검색 진입 | `lbox.kr/v2/search/case?query=...` 직접 URL | 홈 컴포저 "검색" 모드 → `/task/{id}` 작업 + 결과 패널 |
+| 검색 파라미터 | URL 쿼리(caseType·courtType·range·page) | 결과 패널 필터(사건유형·법원·선고일) + 번호 페이지네이션 |
+| 결과 카드 | `.flex.flex-col...` 앵커 + 형제 `.line-clamp-4` 스니펫 | `a[data-track-props]`(docId·rank), 카드 텍스트에 결과 배지·인용/조회 수 |
+| 본문 URL | `/v2/case/{법원}/{사건번호}` | `/case/{법원}/{사건번호}` (구 `/precedent/…`는 자동 리다이렉트) |
+| 본문 추출 | 가상화·비활성 탭 → `<script>` 페이로드 복원(필수) | DOM `data-node-id`에서 직접(innerText 정상). **script 복원 폐기** |
+| 본문 node-id | title-1/2, topheader-1/2, before-1, main-{n} | topheader-{n}, before-{n}, **issue-{n}(판시사항)**, **summary-{n}(판결요지)**, main-{n}, judges-{n} |
+| 관련 판례 | 비활성 탭에서 href만 추출 | 우측 사이드바 "상·하위 판결"(`upperLowerCaseItem`)·"인용된 판례"·"따름 판례" |
+
+#### 개편 전 대비 변경점 — lbox-commentary-search (2.4.15에 SKILL.md에서 이관)
+
+| 항목 | 개편 전 | 개편 후(2026.6) |
+|---|---|---|
+| 검색 진입 | `lbox.kr/v2/search/commentary?document=…&statute=…&query=…` | 홈 컴포저 "검색" → `/task/{id}` → 패널 **"주석·실무서" 탭** |
+| 법령/문서유형 | 숫자 `statute` 코드 + `document=COMMENTARY/PRACTICAL` | **법령 이름·문서유형 필터**(`/book/list` 또는 패널 칩) — 숫자 코드 폐지 |
+| 결과 카드 | `<li>`(카드 wrapper + `.line-clamp-4` 스니펫 + `<ol>` breadcrumb) | `a[data-track-props]`(documentType **`scholar`**, docId) + `div.border-b-xs` 카드(제목+도서메타/스니펫/breadcrumb) |
+| 본문 URL | viewer(쿼리에 nodeId·volumeId·tocId) | `/book/{bookId}?tocId=…&nodeId=…&volumeHistoryId=…` |
+| 본문 추출 | `[data-node-id]` 헤더→다음 `[data-viewer-type="header"]` 형제 수집 | **동일** (단 페이지가 2벌 렌더 → node-id dedup, 섹션이 큰 챕터면 키워드 발췌) |
 
 ## 1.4.0 — 2026-06-11
 

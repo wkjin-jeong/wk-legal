@@ -9,6 +9,10 @@
      ko-law-api/SKILL.md 의 '~/.config/korean-law-api/.env' 경로 행
   5. SKILL.md·references/*.md 가 참조하는 shared/*.md 실존 여부
      (예: '../../shared/기본-문체-규칙.md', 'shared/판례-인용-정책.md')
+  6. 드리프트 린트 — 개정 뒤 일부 파일에 남기 쉬운 낡은 표현(DRIFT_PATTERNS). 대상: SKILL.md,
+     references/*.md, shared/*.md, README.md (CHANGELOG·tools·evals·스크립트 제외)
+  7. 절 포인터 실존 — '`references/…md` 2장'·'`shared/…md` 1.1-5'·'06 3장'이 가리키는
+     번호의 제목(## 2. / ### 1.1 / ### 1-3.)이 대상 문서에 있는지
 패키징:
   evals/, __pycache__, .DS_Store, .env, *.pyc, *.bak* 제외 후
   저장소 부모 폴더에 <name>.plugin (zip) 생성.
@@ -32,6 +36,42 @@ EXCLUDE_DIR = {"evals", "__pycache__"}
 EXCLUDE_FILE = {".DS_Store", ".env", ".law_api.env"}  # 실제 인증키 파일 — 배포 zip에 포함 금지
 # shared/ 참조 패턴: "shared/<파일>.md" 또는 "../../shared/<파일>.md" (코드펜스·따옴표 무관)
 SHARED_REF = re.compile(r"(?:\.\./\.\./)?shared/([\w가-힣.\-]+\.md)")
+# 드리프트 린트: (정규식, 사유, 예외 — 같은 줄에 이 정규식이 있으면 허용(금지 규정을 설명하는 줄 등))
+DRIFT_PATTERNS: list[tuple[str, str, str | None]] = [
+    (r"lbox(?:에서|로) (?:재)?확인", "판례 확인을 lbox 단독 지정 — 판례-인용-정책 1.1(판례DB 우선)", r"류 기존 문구"),
+    (r"라 할 것입니다", "'–라 할 것입니다' 권장 — 기본-문체-규칙 1.(위키 공통 §10 지양)", r"쓰지 않는다|지양|금지|린트"),
+    (r"\d\. 자 ", "결정 표기 '. 자' — '.자'로(판례-인용-정책 5.)", None),
+    (r"mcp__Claude_in_Chrome__", "낡은 Chrome 도구명 — 호스트 중립 표기로", None),
+    (r"(?<![\w./])python (?:scripts/|\S*law_api\.py)", "'python' 실행 — python3로(Cowork VM에 python 없음)", None),
+    (r"slice\(0,\s*5\)", "javascript_tool 분할 반환 — extraction.md 0장 반환 규약으로", None),
+]
+# SKILL.md 전용: 버전마다 바뀌는 행정규칙일련번호(13자리) 고정 예시 금지 — 자리표시(<행정규칙일련번호>)로
+SKILL_ONLY_PATTERNS: list[tuple[str, str, str | None]] = [
+    (r"(?<!\d)2[12]\d{11}(?!\d)", "행정규칙일련번호 고정 예시 — 자리표시로", None),
+]
+SECTION_REF = re.compile(r"`((?:\.\./\.\./)?(?:references|shared)/[\w가-힣.\-]+\.md)` ?(\d+(?:[.-]\d+)*)(?:장|\.)?")
+SHORT_SECTION_REF = re.compile(r"(?<![\d.\w])(0\d) (\d+)장")      # SKILL.md의 '06 3장' 약식 포인터
+
+
+def _heading(text: str, sec: str):
+    return re.search(rf"^(#{{1,6}})\s+{re.escape(sec)}(?:[.\s)]|$)", text, re.M)
+
+
+def has_section(text: str, sec: str) -> bool:
+    """가리킨 번호의 제목(## 2. / ### 1.1 / ### 1-3.)이 있는지. 없으면 마지막 '.M'·'-M'을 상위 절 안의
+    번호 목록 항목('M. …')으로 본다 — 예: '4.3' = 4장의 셋째 항목, '1.1-5' = 1.1절의 다섯째 항목."""
+    if _heading(text, sec):
+        return True
+    m = re.match(r"(.+)[.-](\d+)$", sec)
+    if not m:
+        return False
+    parent, item = m.groups()
+    h = _heading(text, parent)
+    if not h:
+        return has_section(text, parent) if re.search(r"[.-]\d+$", parent) else False
+    nxt = re.search(rf"^#{{1,{len(h.group(1))}}}\s", text[h.end():], re.M)
+    span = text[h.end(): h.end() + nxt.start()] if nxt else text[h.end():]
+    return bool(re.search(rf"^\s*(?:[-*]\s+)?{item}[.)]\s", span, re.M))
 
 
 def fail(msgs: list[str]) -> None:
@@ -111,6 +151,30 @@ def main() -> None:
         for shared_name in set(SHARED_REF.findall(body)):
             if not (shared_dir / shared_name).is_file():
                 errors.append(f"{md.relative_to(ROOT)}: shared 참조 파일 없음 shared/{shared_name}")
+
+    # 6) 드리프트 린트 + 7) 절 포인터 실존
+    lint_targets = md_targets + sorted(shared_dir.glob("*.md")) + [ROOT / "README.md"]
+    for md in lint_targets:
+        if not md.is_file():
+            continue
+        text = md.read_text(encoding="utf-8")
+        rel = md.relative_to(ROOT)
+        pats = DRIFT_PATTERNS + (SKILL_ONLY_PATTERNS if md.name == "SKILL.md" else [])
+        for i, line in enumerate(text.splitlines(), 1):
+            for pat, why, allow in pats:
+                if re.search(pat, line) and not (allow and re.search(allow, line)):
+                    errors.append(f"{rel}:{i}: 드리프트 — {why}")
+        sk_dir = md.parent if md.name == "SKILL.md" else md.parent.parent
+        for path, sec in set(SECTION_REF.findall(text)):
+            ref_name = path.rsplit("/", 1)[1]
+            tgt = shared_dir / ref_name if "shared/" in path else sk_dir / "references" / ref_name
+            if tgt.is_file() and not has_section(tgt.read_text(encoding="utf-8"), sec):
+                errors.append(f"{rel}: 끊긴 절 포인터 '{path} {sec}' — 대상 문서에 {sec} 제목 없음")
+        if md.name == "SKILL.md":
+            for num, sec in set(SHORT_SECTION_REF.findall(text)):
+                refs = sorted((sk_dir / "references").glob(f"{num}-*.md"))
+                if not refs or not has_section(refs[0].read_text(encoding="utf-8"), sec):
+                    errors.append(f"{rel}: 끊긴 절 포인터 '{num} {sec}장'")
 
     if errors:
         fail(errors)
