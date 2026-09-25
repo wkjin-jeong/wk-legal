@@ -14,6 +14,7 @@
     python evidence.py evlist   --root R --out A --record <경로> --list-id L1 [--pages 3-16]
     python evidence.py assign   --out A --list-id L1
     python evidence.py coverage --out A [--list-id L1]
+    python evidence.py cardfill --root R --out A [카드.md...] [--resha]
     python evidence.py profile  --root R --record <경로> --pages 120-522 --report <파일>
     python evidence.py verify   --root R --out A --report <파일> <산출물.md>...
     python evidence.py sum      --root R --record <경로> --pages 45-47 --col 지급금액
@@ -486,6 +487,8 @@ def cmd_index(a) -> int:
     write_jsonl(idx_path, all_rows)
     write_jsonl(seg_path, all_segs)
     save_manifest(out, m)
+    print(json.dumps({"색인_전체": {"record": len({x["record_id"] for x in all_rows}), "쪽": len(all_rows),
+                                  "글자수": sum(x["글자수"] for x in all_rows)}}, ensure_ascii=False))  # 약식 1층 판정용
     return 0
 
 
@@ -803,6 +806,134 @@ def cmd_cardsha(a) -> int:
     return 0
 
 
+# ── cardfill ───────────────────────────────────────────────────────────
+
+CARD_ORDER = ["record_id", "pdf", "출처sha256", "문서종류", "문서성격", "제목", "좌표", "증거ID", "표식"]
+CARD_MECH = {"record_id", "pdf", "출처sha256", "좌표", "증거ID", "표식"}  # 모델은 문서종류·문서성격·제목(·쪽공유)만 쓴다
+
+
+def card_rid(out: Path, f: Path) -> str | None:
+    """카드 경로 `_작업/카드/{record_id}/{시작}-{끝}.md`에서 record_id."""
+    try:
+        return nfc(str(f.resolve().relative_to((work(out) / "카드").resolve()).parent))
+    except ValueError:
+        return None
+
+
+def flow(v) -> str:
+    """front-matter 값의 flow 표기(따옴표 없음)."""
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if v is None:
+        return "null"
+    if isinstance(v, dict):
+        return "{" + ", ".join(f"{k}: {flow(x)}" for k, x in v.items()) + "}"
+    if isinstance(v, list):
+        return "[" + ", ".join(flow(x) for x in v) + "]"
+    return str(v)
+
+
+def split_front(text: str) -> tuple[dict, str]:
+    """(키 → 원문 값 문자열 — 순서 보존·여러 줄 허용, 본문)."""
+    m = re.match(r"\A---\n(.*?)\n---\n?", text, re.S)
+    if not m:
+        return {}, text
+    fm, key = {}, None
+    for line in m.group(1).split("\n"):
+        k = re.match(r"^([^\s:#-][^:]*):(.*)$", line)
+        if k:
+            key = k.group(1).strip()
+            fm[key] = k.group(2).strip()
+        elif key is not None:
+            fm[key] += "\n" + line
+    return fm, text[m.end():]
+
+
+def card_mech(root: Path, m: dict, rows: list[dict], assigns: dict, rid: str, s: int, e: int, prev: dict) -> dict:
+    mr = manifest_record(m, rid) or {}
+    pf = dict(page_files(root / mr["경로"])) if mr.get("경로") else {}
+    marks = {"불명확": 0, "판독불가": 0, "마스킹": 0}
+    for i in range(s, e + 1):
+        if i in pf:
+            body = read_page(pf[i])[1]
+            marks["불명확"] += body.count("[불명확")
+            marks["판독불가"] += body.count("[판독불가")
+            marks["마스킹"] += body.count("[마스킹]")
+    rng = [r for r in rows if s <= r["pdf_page"] <= e]
+    boundary = False
+    if norm_vol(mr.get("권")) and str(mr.get("printed_page_뜻") or "").startswith("기록 면수"):  # 형사 좌표
+        nums = [x for r in rng for x in (r["printed_page"], r.get("우측면")) if x is not None]
+        coord = {"권": mr["권"], "면수": [min(nums), max(nums)] if nums else None}
+        if nop := [r["pdf_page"] for r in rng if r["printed_page"] is None]:
+            coord["면수없는쪽"] = nop
+        ids = {}
+        for lid, arows in assigns.items():
+            for x in arows:
+                if x["record_id"] == rid and s <= x["pdf_page"] <= e and x.get("순번") is not None:
+                    key = (lid, x["순번"], x.get("순번가지"))
+                    ids[key] = "확정" if x["상태"] == "확정" or ids.get(key) == "확정" else "추정"
+        evid = [{"목록ID": l, "순번": n, **({"가지": g} if g else {}), "상태": st}
+                for (l, n, g), st in sorted(ids.items(), key=lambda kv: (kv[0][0], kv[0][1], kv[0][2] or 0))]
+        boundary = any(len({n for l2, n, _ in ids if l2 == l}) > 1 for l in {l for l, _, _ in ids})  # 카드가 순번 경계를 넘음
+    else:  # 민사·행정 좌표
+        coord = {"호증": mr.get("증거번호"), "문건내쪽": [1, e - s + 1]}
+        if str(mr.get("printed_page_뜻") or "").startswith("문서 쪽수"):
+            pr = [(r["pdf_page"], r["printed_page"]) for r in rng if r["printed_page"] is not None]
+            if pr and len(pr) == len(rng):
+                coord["문서쪽"] = [min(v for _, v in pr), max(v for _, v in pr)]
+            elif pr:
+                coord["문서쪽"] = {"pdf": [pr[0][0], pr[-1][0]], "값": [min(v for _, v in pr), max(v for _, v in pr)]}
+        if "문서쪽" not in coord and (dm := re.search(r"문서쪽:\s*(\[[^\]]*\]|\{[^}]*\})", prev.get("좌표", ""))):
+            coord["문서쪽"] = dm.group(1)  # 본문에 남은 내부 쪽번호로 모델이 적은 값은 보존
+        ev = mr.get("증거번호")
+        evid = [{"호증": ev, "상태": mr.get("증거번호_상태") or "추정"}] if ev else []  # 상태는 매니페스트 값 그대로
+    boundary = boundary or bool(re.search(r"경계불일치:\s*true", prev.get("표식", "")))
+    return {"record_id": rid, "pdf": [s, e], "좌표": coord, "증거ID": evid, "표식": {**marks, "경계불일치": boundary}}
+
+
+def cmd_cardfill(a) -> int:
+    root, out = Path(a.root), Path(a.out)
+    m, index = load_manifest(out), read_jsonl(work(out) / "색인.jsonl")
+    by = {}
+    for r in index:
+        by.setdefault(r["record_id"], []).append(r)
+    assigns = {mm.group(1): read_jsonl(f) for f in sorted(work(out).glob("배정_*.jsonl"))
+               if (mm := re.fullmatch(r"배정_(.+)\.jsonl", f.name))}
+    files = [Path(x) for x in a.files] if a.files else sorted((work(out) / "카드").rglob("*.md"))
+    stat, bad, missing = {"카드": 0, "출처sha256_새로": 0}, [], {}
+    for f in files:
+        rid, mm = card_rid(out, f), re.fullmatch(r"(\d+)-(\d+)\.md", f.name)
+        if not rid or not mm:
+            bad.append(f"{f.name}: 카드 경로 형식 아님(_작업/카드/{{record_id}}/{{시작}}-{{끝}}.md)")
+            continue
+        s, e = int(mm.group(1)), int(mm.group(2))
+        rows = by.get(rid, [])
+        if not rows or s > e or not all(any(r["pdf_page"] == i for r in rows) for i in (s, e)):
+            bad.append(f"{rid}/{f.name}: 색인에 없는 record 또는 쪽")
+            continue
+        prev, body = split_front(f.read_text(encoding="utf-8"))
+        mech = card_mech(root, m, rows, assigns, rid, s, e, prev)
+        old = re.search(r"[0-9a-f]{64}", prev.get("출처sha256", ""))
+        if old and not a.resha:  # 이미 있는 값은 그 카드가 쓰인 원문 판의 기록 — 덮어쓰면 coverage가 원문 변경을 못 잡는다
+            mech["출처sha256"] = old.group(0)
+        else:
+            mech["출처sha256"] = range_sha(rows, s, e)
+            stat["출처sha256_새로"] += 1
+        new = {}
+        for k in CARD_ORDER:
+            if k in CARD_MECH:
+                new[k] = flow(mech[k])
+            elif k in prev:
+                new[k] = prev[k]
+            else:
+                missing[k] = missing.get(k, 0) + 1
+        new.update({k: v for k, v in prev.items() if k not in new})
+        write_atomic(f, "---\n" + "\n".join(f"{k}: {v}" for k, v in new.items()) + "\n---\n" + body)
+        stat["카드"] += 1
+    print(json.dumps({**stat, "모델필드_누락": missing, "오류": bad[:20]}, ensure_ascii=False))
+    return 3 if bad else 0
+
+
 # ── derive ─────────────────────────────────────────────────────────────
 
 def cmd_derive(a) -> int:
@@ -812,7 +943,7 @@ def cmd_derive(a) -> int:
     times, people, memos, loose = [], [], [], 0
     for f in sorted((work(out) / "카드").rglob("*.md")):
         text = f.read_text(encoding="utf-8")
-        rid = (re.search(r"^record_id:\s*\"?([^\"\n]+?)\"?\s*$", text, re.M) or [None, ""])[1]
+        rid = (re.search(r"^record_id:\s*\"?([^\"\n]+?)\"?\s*$", text, re.M) or [None, ""])[1] or card_rid(out, f) or ""
         kind = (re.search(r"^문서종류:\s*(.+)$", text, re.M) or [None, ""])[1].strip()
         tagfix = lambda t: re.sub(r"\{\{p:(\d[\d-]*)\}\}", lambda m: "{{p:%s#%s}}" % (alias.get(nfc(rid), rid), m.group(1)), t)
         for line in text.split("\n"):
@@ -911,7 +1042,7 @@ def cmd_verify(a) -> int:
     files = a.files or sorted(str(x) for x in list((work(out) / "카드").rglob("*.md")) + list(out.glob("*.md")))
     for f in files:
         text = Path(f).read_text(encoding="utf-8")
-        default = (re.search(r"^record_id:\s*\"?([^\"\n]+?)\"?\s*$", text, re.M) or [None, None])[1]
+        default = (re.search(r"^record_id:\s*\"?([^\"\n]+?)\"?\s*$", text, re.M) or [None, None])[1] or card_rid(out, Path(f))
         body = re.sub(r"\A---\n.*?\n---\n", "", text, flags=re.S)
         fm_end = text.count("\n", 0, len(text) - len(body))
         body, mine = body.replace("미완성 — 확인 필요 사항 있음", ""), {}
@@ -1122,6 +1253,9 @@ def main() -> None:
     p = add("cardsha", cmd_cardsha, "카드 front-matter에 적을 출처sha256 계산", root=False, out=True)
     p.add_argument("record_id", nargs="?", help="생략하면 구간.jsonl의 전 구간을 출력")
     p.add_argument("pages", nargs="?")
+    p = add("cardfill", cmd_cardfill, "카드 front-matter의 기계 필드(record_id·pdf·출처sha256·좌표·증거ID·표식) 채움", out=True)
+    p.add_argument("--resha", action="store_true", help="출처sha256도 현재 원문으로 다시 계산(원문을 다시 확인한 카드에만)")
+    p.add_argument("files", nargs="*", help="카드 경로. 생략하면 분석 폴더의 전 카드")
     add("derive", cmd_derive, "카드의 색인 절·주의메모 후보를 모아 파생물 초안 생성(_작업/)", root=False, out=True)
     p = add("profile", cmd_profile, "대화 내보내기 출력물 프로필(일자·발신자별 건수·공백·키워드 위치)")
     p.add_argument("--record", required=True)

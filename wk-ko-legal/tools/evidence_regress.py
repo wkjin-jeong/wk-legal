@@ -103,8 +103,11 @@ def main() -> int:
               so[:200])
 
         # 색인
-        rc, _, _ = run(root, "index", *A, *O, "변환본/계약서", "변환본/내역서", "변환본/본권", "변환본/별권1")
+        rc, so, _ = run(root, "index", *A, *O, "변환본/계약서", "변환본/내역서", "변환본/본권", "변환본/별권1")
+        tot = json.loads(so.strip().splitlines()[-1]).get("색인_전체", {})
         check("index: 합성 record 4건", rc == 0)
+        check("S5 index: 약식 판정용 색인_전체(record·쪽·글자수)", tot.get("record") == 4 and tot.get("쪽") == 10
+              and tot.get("글자수", 0) > 0, so)
 
         # E2 — sum
         rc, so, _ = run(root, "sum", *A, "--record", "변환본/계약서", "--pages", "1", "--col", "금액", "--check")
@@ -170,6 +173,55 @@ def main() -> int:
         check("E4 assign: 목록에 없는 권이면 exit 3과 권_불일치", rc == 3 and "권_불일치" in so, so)
         rc, so, _ = run(root, "coverage", *O, "--list-id", "L1", "--no-write")
         check("coverage: 목록→기록 실행", rc in (0, 3) and "보유" in so, so)
+
+        # S4 — cardfill: 기계 필드는 스크립트가 채운다
+        for r in m["records"]:
+            if r["record_id"] == "별권1":
+                r["권"] = "별권 1"
+        mp.write_text(json.dumps(m, ensure_ascii=False, indent=2), encoding="utf-8")
+        run(root, "assign", *O, "--list-id", "L1")
+        kdir = out / "_작업" / "카드"
+
+        def write_card(rid: str, rng: str, body: str) -> Path:
+            f = kdir / rid / f"{rng}.md"
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text(f"---\n문서종류: 범용 폴백\n문서성격: {{공문서: 불명, 처분문서: false, 형태: 사본(스캔)}}\n제목: 합성\n---\n{body}\n",
+                         encoding="utf-8")
+            return f
+
+        def fm(f: Path) -> str:
+            return f.read_text(encoding="utf-8").split("\n---\n")[0]
+
+        c1 = write_card("계약서", "1-3", '- "차용인 홍길동은 위 금액을"{{p:2}}')
+        c2 = write_card("별권1", "1-2", "- 요지 {{p:1}}")
+        c3 = write_card("본권", "1-4", "- 요지 {{p:3}}")
+        rc, so, _ = run(root, "cardfill", *A, *O, str(c1), str(c2), str(c3))
+        f1, f2, f3 = fm(c1), fm(c2), fm(c3)
+        check("S4 cardfill: 민사 카드에 record_id·pdf·출처sha256·좌표·표식을 채우고 모델 필드는 보존",
+              rc == 0 and "record_id: 계약서" in f1 and "pdf: [1, 3]" in f1 and "문건내쪽: [1, 3]" in f1
+              and "제목: 합성" in f1 and "문서성격: {공문서: 불명" in f1
+              and len(__import__("re").findall(r"출처sha256: [0-9a-f]{64}", f1)) == 1, so + f1)
+        check("S4 cardfill: 형사 카드의 권·면수·증거ID(가지 순번 포함)",
+              "좌표: {권: 별권 1, 면수: [1, 2]}" in f2
+              and "증거ID: [{목록ID: L1, 순번: 3, 상태: 확정}, {목록ID: L1, 순번: 3, 가지: 1, 상태: 확정}]" in f2
+              and "경계불일치: false" in f2, f2)
+        check("S4 cardfill: 순번 경계를 넘는 카드는 경계불일치", "경계불일치: true" in f3, f3)
+        rc, so, _ = run(root, "verify", *A, *O, str(c1))
+        check("S4 verify: cardfill한 카드의 인용 통과", rc == 0, so)
+        sha_before = __import__("re").search(r"출처sha256: (\w+)", f1).group(1)
+        pg = root / "변환본" / "계약서" / "pages" / "page_002.md"
+        pg.write_text(pg.read_text(encoding="utf-8") + "\n추가된 문장\n", encoding="utf-8")
+        run(root, "index", *A, *O, "변환본/계약서")
+        run(root, "cardfill", *A, *O, str(c1))
+        rc, so, _ = run(root, "coverage", *O, "--no-write")
+        n_stale = json.loads(so)["누락·변경"]
+        check("S4 cardfill: 기존 출처sha256은 덮어쓰지 않아 coverage가 원문 변경을 잡음", sha_before in fm(c1) and rc == 3, so)
+        run(root, "cardfill", *A, *O, "--resha", str(c1))
+        rc, so, _ = run(root, "coverage", *O, "--no-write")
+        check("S4 cardfill --resha: 원문을 다시 확인한 카드의 sha 갱신 → 원문 변경 1건 해소",
+              sha_before not in fm(c1) and json.loads(so)["누락·변경"] == n_stale - 1, so)
+        for c in (c1, c2, c3):
+            c.unlink()
 
         # E1 — import 제자리 --replace 거부, 외부 원천 재반입은 교체
         rc, _, se = run(root, "import", *A, *O, "--src", str(root / "변환본" / "계약서"), "--dest", "변환본", "--replace")
