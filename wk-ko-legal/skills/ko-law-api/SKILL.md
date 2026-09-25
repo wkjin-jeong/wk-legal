@@ -213,7 +213,7 @@ python3 scripts/law_api.py search --target admrul --query "전자금융감독규
 python3 scripts/law_api.py get --target admrul --id <행정규칙일련번호> --jo 7
 ```
 
-`--org`는 소관부처 **코드**(예: 금융위원회 1160100)만 동작한다 — 기관명을 넣으면 무시된다.
+`--org`는 소관부처 **코드**(예: 금융위원회 1160100)만 받는다 — 기관명을 넣으면 exit 2로 거부한다(API가 기관명을 조용히 무시하기 때문).
 
 ### 자치법규(조례) 검색·본문
 
@@ -222,7 +222,7 @@ python3 scripts/law_api.py search --target ordin --query "옥외광고물" --org
 python3 scripts/law_api.py get --target ordin --mst <자치법규일련번호> --jo 2
 ```
 
-`--org`는 지자체 **코드**(예: 서울특별시 6110000)다 — 기관명을 넣으면 0건이다.
+`--org`는 지자체 **코드**(예: 서울특별시 6110000)만 받는다 — 기관명은 exit 2로 거부한다.
 
 ### 별표·서식 검색 → 다운로드 → 텍스트 추출
 

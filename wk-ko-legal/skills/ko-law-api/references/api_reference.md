@@ -632,13 +632,13 @@ python3 scripts/law_api.py get --target law --mst <법령일련번호> --promulg
 
 ### 행정규칙
 ```bash
-python3 scripts/law_api.py search --target admrul --query "전자금융감독규정" --org 1160100   # org는 소관부처 코드(기관명은 무시됨)
+python3 scripts/law_api.py search --target admrul --query "전자금융감독규정" --org 1160100   # org는 소관부처 코드(기관명은 exit 2)
 python3 scripts/law_api.py get --target admrul --id <행정규칙일련번호> --jo 7                 # 제7조만 발췌
 ```
 
 ### 자치법규
 ```bash
-python3 scripts/law_api.py search --target ordin --query "옥외광고물" --org 6110000        # 서울특별시 코드(기관명은 0건)
+python3 scripts/law_api.py search --target ordin --query "옥외광고물" --org 6110000        # 서울특별시 코드(기관명은 exit 2)
 python3 scripts/law_api.py get --target ordin --mst <자치법규일련번호> --jo 2
 ```
 

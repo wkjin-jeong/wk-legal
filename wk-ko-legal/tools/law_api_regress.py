@@ -144,6 +144,12 @@ def offline() -> None:
                         env=denv, capture_output=True, text=True)
     check("dry-run 명령: 키 가림·admrul URL", d1.returncode == 0 and "dummykey_xyz" not in d1.stdout + d2.stdout
           and "OC=***" in d1.stdout and "target=admrul" in d2.stdout, d1.stdout + d2.stdout)
+    o1 = subprocess.run([sys.executable, SCRIPT, "--dry-run", "search", "--target", "admrul", "--query", "x",
+                         "--org", "금융위원회"], env=denv, capture_output=True, text=True)
+    o2 = subprocess.run([sys.executable, SCRIPT, "--dry-run", "search", "--target", "ordin", "--query", "x",
+                         "--org", "6110000"], env=denv, capture_output=True, text=True)
+    check("--org 기관명 → exit 2, 코드는 통과", o1.returncode == 2 and "기관 코드" in o1.stderr
+          and o2.returncode == 0 and "org=6110000" in o2.stdout, o1.stderr[-200:] + o2.stdout[-200:])
 
     # 키 파일 탐색 — (a) 상위 폴더의 .law_api.env, (b) 키 없는 cwd .env는 건너뛰고 ~/.config를 읽되 FOO는 주입 안 함.
     code = "import os, law_api as L; print(L.resolve_oc(None), os.environ.get('FOO'), os.environ.get('OTHER'))"

@@ -1843,6 +1843,16 @@ def _apply_defaults(args: argparse.Namespace) -> argparse.Namespace:
     return args
 
 
+def _org_code(value: str) -> str:
+    """--org·--sborg는 기관 코드만 받는다 — 기관명을 넣으면 API가 행정규칙은 조용히 무시하고 자치법규는 0건을 돌려준다."""
+    v = value.strip()
+    if not v.isdigit():
+        raise argparse.ArgumentTypeError(
+            f"기관 코드(숫자)만 받는다 — '{v}'는 기관명이다(예: 금융위원회 1160100, 서울특별시 6110000). "
+            "코드를 모르면 --org 없이 검색하고 결과의 소관부처·지자체명으로 고른다.")
+    return v
+
+
 def make_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="law_api.py",
@@ -1870,9 +1880,9 @@ def make_parser() -> argparse.ArgumentParser:
     )
     s.add_argument("--page", type=int, default=1, help="페이지 번호 (기본 1)")
     s.add_argument("--search", help="검색범위 코드 (target=law: 1=법령명, 2=본문 등)")
-    s.add_argument("--org", help="소관부처 (행정규칙) / 지자체 시·도 코드 (자치법규)")
+    s.add_argument("--org", type=_org_code, help="소관부처 코드 (행정규칙) / 지자체 시·도 코드 (자치법규) — 숫자 코드만")
     s.add_argument("--nw", help="현행/연혁 필터 — eflaw: 1연혁,2시행예정,3현행 조합(예: 1,3) / ordin: 1현행, 2연혁")
-    s.add_argument("--sborg", help="자치법규 시·군·구 코드 (org와 함께)")
+    s.add_argument("--sborg", type=_org_code, help="자치법규 시·군·구 코드 (org와 함께)")
     s.add_argument("--knd", help="종류 코드 (target에 따라 의미 다름)")
     s.add_argument("--lid-search", "--lid", dest="lid_search",
                    help="LID(법령ID)로 한정 검색 — eflaw에서 특정 법령의 버전만 조회할 때 권장")
@@ -1939,8 +1949,8 @@ def make_parser() -> argparse.ArgumentParser:
     v.add_argument("--lid", help="계통ID — law: 법령ID(권장, 부분일치 오염 차단) / admrul: 행정규칙ID / ordin: 자치법규ID(--query 결과 한정)")
     v.add_argument("--query", help="법령명(정확명 일치 필터) / 자치법규명·행정규칙명(부분일치 — 명칭·종류 확인용)")
     v.add_argument("--nw", help="eflaw nw 필터 (기본 1,3 = 연혁+현행, 시행예정 배제)")
-    v.add_argument("--org", help="자치법규 시·도 코드")
-    v.add_argument("--sborg", help="자치법규 시·군·구 코드 (org와 함께)")
+    v.add_argument("--org", type=_org_code, help="소관부처 코드 (행정규칙) / 시·도 코드 (자치법규) — 숫자 코드만")
+    v.add_argument("--sborg", type=_org_code, help="자치법규 시·군·구 코드 (org와 함께)")
     v.add_argument("--json", action="store_true", help="JSON으로 출력")
     v.set_defaults(func=cmd_versions)
 
@@ -1961,8 +1971,8 @@ def make_parser() -> argparse.ArgumentParser:
     a.add_argument("--lid", help="계통ID — law: 법령ID(권장) / admrul: 행정규칙ID / ordin: 자치법규ID(--query 결과 한정)")
     a.add_argument("--query", help="법령명(정확명) / 행정규칙명·자치법규명(부분일치 — 정확명이면 계통 자동 선택)")
     a.add_argument("--nw", help="eflaw nw 필터 (기본 1,3)")
-    a.add_argument("--org", help="자치법규 시·도 코드")
-    a.add_argument("--sborg", help="자치법규 시·군·구 코드")
+    a.add_argument("--org", type=_org_code, help="소관부처 코드 (행정규칙) / 시·도 코드 (자치법규) — 숫자 코드만")
+    a.add_argument("--sborg", type=_org_code, help="자치법규 시·군·구 코드")
     a.add_argument("--jo", help="조문번호 (예: 46 또는 '제46조'). admrul·ordin은 받은 본문에서 발췌")
     a.set_defaults(func=cmd_get_asof)
 
