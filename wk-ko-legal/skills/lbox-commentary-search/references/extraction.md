@@ -2,6 +2,22 @@
 
 SKILL.md 본문이 지시하는 시점에 해당 장만 읽는다. 모든 셀렉터·JS는 2026.6 개편판 라이브 검증본이다. lbox는 Next.js(App Router) 기반이며 본문은 서버 렌더되어 별도 API 없이 DOM에 들어온다.
 
+## 0. 반환 규약 — 큰 결과는 `get_page_text`로 받는다
+
+`javascript_tool`의 반환값은 약 1,000자에서 `[TRUNCATED]`로 잘린다(Claude Code·Cowork 실측). 카드 10건은 3~4천 자, 본문 머리부는 3천 자를 넘기 쉬워 그대로 반환하면 매번 잘린다. 그래서 이 문서의 추출 JS는 결과를 반환하지 않고 **페이지에 내놓는다**: `OUT()`이 body를 결과 텍스트만 담은 `<pre>`로 잠시 바꾸고 `OUT n자`만 반환하면, `get_page_text`가 그 텍스트를 잘림 없이 돌려준다.
+
+1. **한 번에 보낸다**: [추출 JS] → `get_page_text` → [복구 JS] 세 호출을 `browser_batch` 하나로 보낸다. 결과는 `get_page_text` 출력의 `Source element: <body>` 아래 JSON이다. batch 도구가 없으면 세 호출을 차례로 한다.
+2. **복구 JS**: `if (window.__origBody) { document.body = window.__origBody; window.__origBody = null; } 'restored'` — 떼어 둔 원래 body를 그대로 되돌리므로 페이지 상태·이벤트가 유지된다(2026-09-26 실측: lbox 작업 결과 패널·판례 본문, bigcase 검색 결과 — 복구 뒤 페이지 넘기기·사이드바 펼치기 정상). **복구 전에는 `computer` 클릭·`screenshot`을 하지 않는다**(빈 화면을 누르게 된다). 아래 JS는 모두 첫 줄에서 먼저 복구하므로, batch가 중간에 끊겨도 다음 JS가 되살린다.
+3. 한 번에 내놓는 양은 12,000자 안팎까지로 한다(컨텍스트 절약). 더 필요하면 범위를 옮겨 다시 내놓는다 — `window.__lboxCommentary`·`window.__lboxSection`에 저장해 둔 값에서 자르면 DOM을 다시 읽지 않아도 된다. 1,000자보다 확실히 작은 결과(탭 클릭 여부·건수 등)는 그대로 반환해도 된다.
+4. `get_page_text`에 JSON이 아니라 원래 페이지 글이 나오면 내놓기가 안 된 것이다 — 추출 JS의 반환값(`OUT n자`인지 오류인지)을 보고 다시 보낸다. 페이지 전체를 `get_page_text`로 읽어 본문을 얻으려 하지 않는다(사이드바·메뉴가 섞인다).
+
+아래 JS는 모두 이 두 줄로 시작한다.
+
+```javascript
+if (window.__origBody) { document.body = window.__origBody; window.__origBody = null; }   // 복구(이전 내놓기가 남아 있으면)
+const OUT = s => { if (!window.__origBody) window.__origBody = document.body; const b = document.createElement('body'), p = document.createElement('pre'); p.textContent = s; b.appendChild(p); document.body = b; return 'OUT ' + s.length + '자'; };
+```
+
 ## 1. 검색 실행 · 주석·실무서 탭 · 카드 추출
 
 ### 1-1. 검색 실행 (컴포저 "검색" 모드)
@@ -19,6 +35,7 @@ SKILL.md 본문이 지시하는 시점에 해당 장만 읽는다. 모든 셀렉
 
 ```javascript
 (() => {
+  if (window.__origBody) { document.body = window.__origBody; window.__origBody = null; }   // 복구(0장)
   const cands = Array.from(document.querySelectorAll('button,[role="tab"]'))
     .filter(el => (el.textContent || '').trim() === '주석·실무서');
   const tab = cands.find(el => el.getAttribute('role') === 'tab') || cands[0];
@@ -37,6 +54,8 @@ SKILL.md 본문이 지시하는 시점에 해당 장만 읽는다. 모든 셀렉
 
 ```javascript
 (() => {
+  if (window.__origBody) { document.body = window.__origBody; window.__origBody = null; }   // 복구(0장)
+  const OUT = s => { if (!window.__origBody) window.__origBody = document.body; const b = document.createElement('body'), p = document.createElement('pre'); p.textContent = s; b.appendChild(p); document.body = b; return 'OUT ' + s.length + '자'; };
   const txt = el => (el ? (el.innerText || el.textContent || '') : '').replace(/\s+/g, ' ').trim();
   const anchors = Array.from(document.querySelectorAll('a[data-track-props]')).filter(a => {
     try { return JSON.parse(a.getAttribute('data-track-props')).documentType === 'scholar'; } catch (e) { return false; }
@@ -68,12 +87,12 @@ SKILL.md 본문이 지시하는 시점에 해당 장만 읽는다. 모든 셀렉
     });
   });
   window.__lboxCommentary = cards;                      // 분할 접근용(현재 페이지 한정)
-  return JSON.stringify({ count: cards.length, items: cards });
+  return OUT(JSON.stringify({ count: cards.length, items: cards }));
 })()
 ```
 
 - `bookMeta`는 "민법 채권각칙 제6권 김용덕 한국사법행정학회 2021. 10. 15. 제5판"처럼 도서명·편집대표·출판사·출판일·판본이 이어진 문자열이다. 답변의 출처 표기에 그대로 활용한다(필요하면 끝의 "제N판"·날짜를 분리).
-- 결과가 truncated되면 `window.__lboxCommentary`를 인덱스로 분할해 받는다.
+- 반환값은 `OUT n자`뿐이고 카드 JSON은 이어지는 `get_page_text`로 받는다(0장 — 세 호출을 batch 하나로).
 - 페이지 간 중복은 navigate로 window가 초기화되므로, 각 페이지가 반환한 `items`를 대화 안에서 같은 `(bookId, tocId, nodeId)` 키로 한 번 더 거른다.
 
 ### 1-4. 페이지 순회 · 필터
@@ -93,12 +112,14 @@ https://lbox.kr/book/{bookId}?tocId={tocId}&nodeId={nodeId}&volumeHistoryId={vol
 
 > **2벌 렌더 주의**: 본문 페이지도 전체 DOM을 2벌로 그린다(같은 `nodeId` 헤더가 2개). 다만 **두 copy는 서로 다른 parent**에 있어, `headers[0]`의 형제만 걷으면 한 copy만 깨끗하게 모인다(실측: 중복 0, 제목 1회). 그래도 안전하게 형제 walk 중 **이미 본 `data-node-id`는 건너뛴다**.
 >
-> **섹션이 클 수 있음**: `nodeId`가 "Ⅳ. 인신사고로 인한 손해액의 산정" 같은 **상위 장**을 가리키면 그 장 전체(수만 자)가 한 섹션이다. 전문을 한 번에 반환하면 truncated되므로 `window.__lboxSection`에 저장하고 **질의 키워드 인근만 발췌**해 반환한다.
+> **섹션이 클 수 있음**: `nodeId`가 "Ⅳ. 인신사고로 인한 손해액의 산정" 같은 **상위 장**을 가리키면 그 장 전체(수만 자)가 한 섹션이다. 전문을 다 받으면 컨텍스트를 낭비하므로 `window.__lboxSection`에 저장하고 **질의 키워드 인근만 발췌**해 내놓는다.
 
 navigate 후 짧은 텀을 두고 실행:
 
 ```javascript
 (() => {
+  if (window.__origBody) { document.body = window.__origBody; window.__origBody = null; }   // 복구(0장)
+  const OUT = s => { if (!window.__origBody) window.__origBody = document.body; const b = document.createElement('body'), p = document.createElement('pre'); p.textContent = s; b.appendChild(p); document.body = b; return 'OUT ' + s.length + '자'; };
   const targetId = new URL(location.href).searchParams.get('nodeId');   // 읽기만; 반환하지 않음
   const header = document.querySelector('[data-node-id="' + (targetId || '') + '"]'); // 첫 copy
   if (!header) return JSON.stringify({ error: 'header not found' });
@@ -118,15 +139,15 @@ navigate 후 짧은 텀을 두고 실행:
   // 질의 특화 키워드(1~3개)를 매 검색마다 교체. 없으면 앞부분.
   const kw = [/* 예: '양도금지특약','대항요건' */];
   let i = -1; for (const k of kw) { i = full.indexOf(k); if (i >= 0) break; }
-  return JSON.stringify({
+  return OUT(JSON.stringify({
     sectionTitle: parts[0] || '',
     nodeCount: parts.length,
     sectionLen: full.length,
     excerpt: i >= 0 ? full.slice(Math.max(0, i - 300), i + 3000) : full.slice(0, 3500)
-  });
+  }));
 })()
 ```
 
-- **추가 발췌**: 더 필요하면 `window.__lboxSection.slice(START, END)`로 범위를 옮겨 받는다(한 번에 큰 문자열 반환 금지 → truncated).
+- **추가 발췌**: 더 필요하면 0장의 두 줄 뒤에 `OUT(window.__lboxSection.slice(START, END))`를 실행해 범위를 옮겨 받는다(한 번에 12,000자 안팎까지).
 - **`header not found`**: 로드 미완·UI 변경. 한 번 retry(짧은 텀) 후에도 실패하면 그 카드 건너뜀. `nodeId`를 JS 코드에 임베드해 반환 JSON에 노출하면 `[BLOCKED]` 위험이 있으니, URL에서 읽어 쓰되 결과로 반환하지 않는다.
 - **본문 빈약(조문 노드)**: SKILL 5.1 절차 — 같은 도서·breadcrumb 부모의 하위 노드 카드를 추가 visit.

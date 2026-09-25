@@ -15,7 +15,7 @@ lbox.kr 주석서·실무서 검색에서 사용자 질의와 관련된 주석�
 
 lbox.kr 로그인 + 주석·실무서 **구독이 항상 활성**이라고 전제합니다(구독 확인 분기를 두지 않음). 환경 점검은 `lbox-case-search`와 동일합니다.
 
-1. **Chrome MCP 도구**: 이름에 `claude-in-chrome`(호스트에 따라 `Claude_in_Chrome`)이 들어간 Claude in Chrome 도구(현재 `mcp__claude-in-chrome__*` — `navigate`, `javascript_tool`, `computer`, `read_page` 등). 컴포저 입력·모드 선택·탭 클릭에는 `computer`/`find`가 필요합니다.
+1. **Chrome MCP 도구**: 이름에 `claude-in-chrome`(호스트에 따라 `Claude_in_Chrome`)이 들어간 Claude in Chrome 도구(현재 `mcp__claude-in-chrome__*` — `navigate`, `javascript_tool`, `get_page_text`, `browser_batch`, `computer`, `read_page` 등). 컴포저 입력·모드 선택·탭 클릭에는 `computer`/`find`가 필요합니다. **`javascript_tool` 반환은 약 1,000자에서 잘리므로** 카드·본문 추출 결과는 `references/extraction.md` 0장의 반환 규약으로 받습니다(추출 JS가 결과를 페이지에 내놓고 → `get_page_text` → 복구 JS, 세 호출을 `browser_batch` 하나로).
 2. **연결된 브라우저 확인**: `list_connected_browsers` → 여러 기기면 `select_browser(deviceId)`. 대화마다 `tabs_context_mcp{createIfEmpty:true}`로 전용 탭 확보.
 3. **검색은 '작업(Task)'을 생성**합니다(새 lbox의 정상 동작, 등록 '사건'과 별개). 한 검색 세션은 가급적 하나의 작업에서 진행하세요.
 4. **JS 사전 점검**: 첫 페이지에서 `document.title` 평가로 정상 응답 확인.

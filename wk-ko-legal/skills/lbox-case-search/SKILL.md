@@ -15,7 +15,7 @@ lbox.kr 판례 검색 사이트에서 사용자 질의와 관련된 판례를 �
 
 1. **Chrome 실행 + lbox.kr 로그인 필수**: lbox.kr은 로그인하지 않으면 검색·본문에 접근할 수 없습니다(판례 본문 API가 401을 반환). 사용자가 Chrome에서 미리 로그인해 두었다는 전제로 동작합니다. 이 Skill은 Chrome 확장(Claude in Chrome)의 **계정 기반 연결**로 작동하므로 Claude가 동작하는 PC와 Chrome 브라우저가 동작하는 PC는 **같을 필요가 없습니다**. 단 lbox.kr 로그인은 Chrome이 실제 실행 중인 PC에서 사용자가 직접 마쳐 두어야 합니다.
 
-2. **Chrome MCP 도구 선택**: 이름에 `claude-in-chrome`(호스트에 따라 `Claude_in_Chrome`)이 들어간 Claude in Chrome 도구(현재 `mcp__claude-in-chrome__*` — `navigate`, `javascript_tool`, `read_page`, `computer`, `read_network_requests`, `tabs_context_mcp` 등)를 사용합니다. JS 실행과 DOM 추출이 안정적이므로 이 도구를 사용하세요. 컴포저에 검색어를 입력하고 모드를 선택하는 단계에는 `computer`(클릭·타이핑) 또는 `find`/`form_input`이 필요합니다.
+2. **Chrome MCP 도구 선택**: 이름에 `claude-in-chrome`(호스트에 따라 `Claude_in_Chrome`)이 들어간 Claude in Chrome 도구(현재 `mcp__claude-in-chrome__*` — `navigate`, `javascript_tool`, `get_page_text`, `browser_batch`, `read_page`, `computer`, `read_network_requests`, `tabs_context_mcp` 등)를 사용합니다. **`javascript_tool` 반환은 약 1,000자에서 잘리므로** 카드·본문 추출 결과는 `references/extraction.md` 0장의 반환 규약으로 받습니다(추출 JS가 결과를 페이지에 내놓고 → `get_page_text` → 복구 JS, 세 호출을 `browser_batch` 하나로). JS 실행과 DOM 추출이 안정적이므로 이 도구를 사용하세요. 컴포저에 검색어를 입력하고 모드를 선택하는 단계에는 `computer`(클릭·타이핑) 또는 `find`/`form_input`이 필요합니다.
 
 3. **연결된 브라우저 확인 + 선택**:
    - `list_connected_browsers`로 같은 Anthropic 계정에 연결된 Chrome 확장 인스턴스 목록을 확인합니다(`deviceId`, `name`, `osPlatform`, `isLocal`).
@@ -160,7 +160,7 @@ lbox.kr 판례 검색 사이트에서 사용자 질의와 관련된 판례를 �
 
 ## 문제 발생 시
 
-증상별 대응(검색 0건, `Runtime.evaluate timed out`, `[BLOCKED]`, truncated, `Tab not found`, 로그인 리다이렉트, 결과 패널이 닫힘, 셀렉터 불일치 등)은 `references/troubleshooting.md` 참조. 핵심: ① 본문은 이제 DOM에서 바로 읽히므로 `<script>` 복원을 쓰지 말 것, ② `navigate`/제출과 `javascript_tool`은 분리 호출하고 짧은 텀을 둘 것(JS 내부에 대기 루프 금지), ③ 검색 결과가 안 보이면 timeline 카드("○○ 검색 결과")를 클릭해 패널을 다시 연다.
+증상별 대응(검색 0건, `Runtime.evaluate timed out`, `[BLOCKED]`, `[TRUNCATED]`·복구, `Tab not found`, 로그인 리다이렉트, 결과 패널이 닫힘, 셀렉터 불일치 등)은 `references/troubleshooting.md` 참조. 핵심: ① 본문은 이제 DOM에서 바로 읽히므로 `<script>` 복원을 쓰지 말 것, ② `navigate`/제출과 `javascript_tool`은 분리 호출하고 짧은 텀을 둘 것(JS 내부에 대기 루프 금지), ③ 검색 결과가 안 보이면 timeline 카드("○○ 검색 결과")를 클릭해 패널을 다시 연다.
 
 ## 금지 사항
 

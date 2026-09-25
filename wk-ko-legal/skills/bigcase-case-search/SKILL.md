@@ -15,7 +15,7 @@ bigcase.ai(빅케이스) 판례 검색 사이트에서 사용자 질의와 관�
 
 1. **Chrome 실행 + bigcase.ai 로그인 필수**: 유료 구독 계정으로 로그인되어 있어야 판례 전문 열람이 자유롭습니다. 사용자가 Chrome에서 미리 로그인해 두었다는 전제로 동작합니다. 이 Skill은 Chrome 확장(Claude in Chrome)의 계정 기반 연결로 작동하므로 Claude가 동작하는 PC와 Chrome이 실행되는 PC는 같을 필요가 없습니다. 단 bigcase.ai 로그인은 Chrome이 실제 실행 중인 PC에서 사용자가 직접 마쳐 두어야 합니다.
 
-2. **Chrome MCP 도구 선택**: 이름에 `claude-in-chrome`(호스트에 따라 `Claude_in_Chrome`)이 들어간 Claude in Chrome 도구(현재 `mcp__claude-in-chrome__*` — `navigate`, `javascript_tool`, `read_page`, `computer`, `tabs_context_mcp` 등)를 사용합니다. bigcase는 URL 직접 진입이 가능하므로 대부분 `navigate` + `javascript_tool` 두 가지로 충분하며, `computer`(클릭)는 기간 드롭다운 등 일부 필터 조작에만 필요합니다.
+2. **Chrome MCP 도구 선택**: 이름에 `claude-in-chrome`(호스트에 따라 `Claude_in_Chrome`)이 들어간 Claude in Chrome 도구(현재 `mcp__claude-in-chrome__*` — `navigate`, `javascript_tool`, `get_page_text`, `browser_batch`, `read_page`, `computer`, `tabs_context_mcp` 등)를 사용합니다. **`javascript_tool` 반환은 약 1,000자에서 잘리므로** 카드·본문 추출 결과는 `references/extraction.md` 0장의 반환 규약으로 받습니다(추출 JS가 결과를 페이지에 내놓고 → `get_page_text` → 복구 JS, 세 호출을 `browser_batch` 하나로). bigcase는 URL 직접 진입이 가능하므로 대부분 `navigate`와 이 추출 묶음으로 충분하며, `computer`(클릭)는 기간 드롭다운 등 일부 필터 조작에만 필요합니다.
 
 3. **연결된 브라우저 확인 + 선택**: `list_connected_browsers`로 연결된 Chrome 인스턴스를 확인하고, 여러 기기가 연결되어 있으면 어느 기기에서 bigcase.ai에 로그인했는지 사용자에게 확인한 뒤 `select_browser(deviceId)`로 지정합니다. 각 대화는 `tabs_context_mcp{createIfEmpty:true}`로 전용 탭을 확보한 뒤 그 `tabId`로 작업합니다.
 
@@ -134,7 +134,7 @@ bigcase.ai(빅케이스) 판례 검색 사이트에서 사용자 질의와 관�
 
 ## 문제 발생 시
 
-증상별 대응(검색 0건, `Runtime.evaluate timed out`, `[BLOCKED]`, truncated, `Tab not found`, 구독·로그인 문제, 셀렉터 불일치, 병합 사건번호 등)은 `references/troubleshooting.md` 참조. 핵심: ① `navigate`와 `javascript_tool`은 분리 호출하고 짧은 텀을 둘 것, ② 결과 반환 시 원시 `outerHTML`·쿼리스트링을 포함하지 말 것(`[BLOCKED]` 차단 유발 — pathname·텍스트만), ③ 해시 접미사 클래스(`CaseParagraph_container__…` 등)는 프리픽스 매칭(`[class^="…"]`)으로 잡을 것.
+증상별 대응(검색 0건, `Runtime.evaluate timed out`, `[BLOCKED]`, `[TRUNCATED]`·복구, `Tab not found`, 구독·로그인 문제, 셀렉터 불일치, 병합 사건번호 등)은 `references/troubleshooting.md` 참조. 핵심: ① `navigate`와 `javascript_tool`은 분리 호출하고 짧은 텀을 둘 것, ② 결과 반환 시 원시 `outerHTML`·쿼리스트링을 포함하지 말 것(`[BLOCKED]` 차단 유발 — pathname·텍스트만), ③ 해시 접미사 클래스(`CaseParagraph_container__…` 등)는 프리픽스 매칭(`[class^="…"]`)으로 잡을 것.
 
 ## 금지 사항
 

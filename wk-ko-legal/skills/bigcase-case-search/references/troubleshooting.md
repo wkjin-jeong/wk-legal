@@ -8,7 +8,9 @@
 
 - **결과가 `[BLOCKED: Cookie/query string data]`**: 반환값에 원시 `outerHTML`·`location.search`·전체 URL(쿼리스트링 포함)이 들어가면 차단된다(실측). URL은 **pathname만** 다루고(`new URL(href).pathname`), HTML 원문 대신 텍스트·구조화 필드만 반환한다. 쿠키·인증 토큰은 결과에 절대 포함하지 않는다.
 
-- **결과가 truncated**: 한 번에 받는 데이터가 크다. 카드는 `window.__bigcaseCards`, 본문 섹션은 `window.__bigcaseSecs`에 저장해 두고 인덱스로 분할 접근하거나, 이유는 키워드 인근 ±2500자로 제한해 받는다(`references/extraction.md` 1·2장).
+- **결과가 `[TRUNCATED]`로 잘림**: 추출 JS가 결과를 직접 반환했다(`javascript_tool` 반환 상한 약 1,000자). `references/extraction.md` 0장의 반환 규약대로 결과를 페이지에 내놓고(OUT) `get_page_text`로 받는다 — 잘린 결과를 분할 재호출로 이어 붙이지 않는다.
+
+- **화면에 JSON 글자만 보임 / 클릭이 안 먹힘**: 내놓은 뒤 복구를 하지 않았다. 0장의 복구 JS를 실행한다. 그래도 이상하면 같은 URL로 다시 `navigate`한다.
 
 - **`Tab not found`**: 탭이 닫혔거나 ID가 바뀌었다. `tabs_context_mcp`로 현재 탭 ID를 다시 확인하고 navigate한다.
 

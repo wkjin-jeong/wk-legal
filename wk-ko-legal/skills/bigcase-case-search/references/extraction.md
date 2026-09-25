@@ -4,6 +4,22 @@ SKILL.md 본문이 지시하는 시점에 해당 장만 읽는다. 모든 셀렉
 
 > **클래스 안정성 규칙**: BEM식 클래스(`search-list-card`, `page-search-list__list-wrap`, `appealed-case-side__item`, `ai-similar-side__item`, `literature-case-side__card-wrap`, `pagination__number-item` 등)는 안정적이다. 반면 해시 접미사 클래스(`CaseParagraph_container__MdKLK`, `CaseContentInfo_container__po5LO`, `FilterItem_container__a_kTv` 등)는 배포 시 접미사가 바뀔 수 있으므로 **반드시 프리픽스 매칭**(`[class^="CaseParagraph_container"]`, `[class*="tp__title"]`)으로 잡는다.
 
+## 0. 반환 규약 — 큰 결과는 `get_page_text`로 받는다
+
+`javascript_tool`의 반환값은 약 1,000자에서 `[TRUNCATED]`로 잘린다(Claude Code·Cowork 실측). 카드 10건은 3~4천 자, 본문 머리부는 3천 자를 넘기 쉬워 그대로 반환하면 매번 잘린다. 그래서 이 문서의 추출 JS는 결과를 반환하지 않고 **페이지에 내놓는다**: `OUT()`이 body를 결과 텍스트만 담은 `<pre>`로 잠시 바꾸고 `OUT n자`만 반환하면, `get_page_text`가 그 텍스트를 잘림 없이 돌려준다.
+
+1. **한 번에 보낸다**: [추출 JS] → `get_page_text` → [복구 JS] 세 호출을 `browser_batch` 하나로 보낸다. 결과는 `get_page_text` 출력의 `Source element: <body>` 아래 JSON이다. batch 도구가 없으면 세 호출을 차례로 한다.
+2. **복구 JS**: `if (window.__origBody) { document.body = window.__origBody; window.__origBody = null; } 'restored'` — 떼어 둔 원래 body를 그대로 되돌리므로 페이지 상태·이벤트가 유지된다(2026-09-26 실측: lbox 작업 결과 패널·판례 본문, bigcase 검색 결과 — 복구 뒤 페이지 넘기기·사이드바 펼치기 정상). **복구 전에는 `computer` 클릭·`screenshot`을 하지 않는다**(빈 화면을 누르게 된다). 아래 JS는 모두 첫 줄에서 먼저 복구하므로, batch가 중간에 끊겨도 다음 JS가 되살린다.
+3. 한 번에 내놓는 양은 12,000자 안팎까지로 한다(컨텍스트 절약). 더 필요하면 범위를 옮겨 다시 내놓는다 — `window.__bigcaseCards`·`window.__bigcaseSecs`에 저장해 둔 값에서 자르면 DOM을 다시 읽지 않아도 된다. 1,000자보다 확실히 작은 결과(탭 클릭 여부·건수 등)는 그대로 반환해도 된다.
+4. `get_page_text`에 JSON이 아니라 원래 페이지 글이 나오면 내놓기가 안 된 것이다 — 추출 JS의 반환값(`OUT n자`인지 오류인지)을 보고 다시 보낸다. 페이지 전체를 `get_page_text`로 읽어 본문을 얻으려 하지 않는다(사이드바·메뉴가 섞인다).
+
+아래 JS는 모두 이 두 줄로 시작한다.
+
+```javascript
+if (window.__origBody) { document.body = window.__origBody; window.__origBody = null; }   // 복구(이전 내놓기가 남아 있으면)
+const OUT = s => { if (!window.__origBody) window.__origBody = document.body; const b = document.createElement('body'), p = document.createElement('pre'); p.textContent = s; b.appendChild(p); document.body = b; return 'OUT ' + s.length + '자'; };
+```
+
 ## 1. 검색 실행 · 결과 카드 추출 · 페이지 순회 · 필터
 
 ### 1-1. 검색 URL 구성
@@ -31,6 +47,8 @@ https://bigcase.ai/search/case?q={encodeURIComponent(검색어)}
 
 ```javascript
 (() => {
+  if (window.__origBody) { document.body = window.__origBody; window.__origBody = null; }   // 복구(0장)
+  const OUT = s => { if (!window.__origBody) window.__origBody = document.body; const b = document.createElement('body'), p = document.createElement('pre'); p.textContent = s; b.appendChild(p); document.body = b; return 'OUT ' + s.length + '자'; };
   const roots = Array.from(document.querySelectorAll('.page-search-list__list-wrap .search-list-card'))
     .filter(c => !String(c.className).includes('__'));
   const items = roots.map((c, i) => {
@@ -56,12 +74,12 @@ https://bigcase.ai/search/case?q={encodeURIComponent(검색어)}
   const total = Array.from(document.querySelectorAll('span,div,p'))
     .map(e => e.childElementCount === 0 ? (e.innerText || '').trim() : '')
     .find(s => /건의 검색 결과/.test(s)) || '';
-  return JSON.stringify({ count: items.length, total, items });
+  return OUT(JSON.stringify({ count: items.length, total, items }));
 })()
 ```
 
 - `url`이 빈 카드(정규식 불일치)는 `title`을 보고 수동 판단한다(`references/troubleshooting.md`). 병합 사건·전원합의체는 위 JS가 이미 처리한다.
-- 결과가 커서 truncated되면 `JSON.stringify(window.__bigcaseCards.slice(0,5))`처럼 인덱스로 분할해 받는다.
+- 반환값은 `OUT n자`뿐이고 카드 JSON은 이어지는 `get_page_text`로 받는다(0장 — 세 호출을 batch 하나로. 10건 약 4천 자 실측).
 - `badge`가 `-`인 카드도 있다(주문 정보 미분류). triage에서는 스니펫을 우선한다.
 
 ### 1-3. 페이지 순회
@@ -85,6 +103,8 @@ https://bigcase.ai/cases/{encodeURIComponent(법원명)}/{encodeURIComponent(사
 
 ```javascript
 (() => {
+  if (window.__origBody) { document.body = window.__origBody; window.__origBody = null; }   // 복구(0장)
+  const OUT = s => { if (!window.__origBody) window.__origBody = document.body; const b = document.createElement('body'), p = document.createElement('pre'); p.textContent = s; b.appendChild(p); document.body = b; return 'OUT ' + s.length + '자'; };
   const txt = e => e ? (e.innerText || '').replace(/\s+/g, ' ').trim() : '';
   const secs = Array.from(document.querySelectorAll('[class^="CaseParagraph_container"]')).map(s => ({
     title: txt(s.querySelector('[class*="tp__title"]')).replace(/\s/g, ''),   // "주 문"→"주문"
@@ -93,7 +113,7 @@ https://bigcase.ai/cases/{encodeURIComponent(법원명)}/{encodeURIComponent(사
   window.__bigcaseSecs = secs;                                     // 분할 접근용
   const get = n => (secs.find(s => s.title === n) || {}).text || '';
   const reason = get('이유');
-  return JSON.stringify({
+  return OUT(JSON.stringify({
     title: document.title.replace(/\s*-\s*판례검색.*$/, ''),        // "법원 선고일 선고 사건번호 판결 사건명"
     outcome: txt(document.querySelector('[class*="CaseContentInfo"]')).slice(0, 200), // 주문 결과·중요판례 표시 포함
     sections: secs.map(s => ({ title: s.title, len: s.text.length })),
@@ -103,23 +123,25 @@ https://bigcase.ai/cases/{encodeURIComponent(법원명)}/{encodeURIComponent(사
     order: get('주문').slice(0, 500),
     reasonLen: reason.length,
     lastReason: reason.slice(-180).replace(/\s+/g, ' ')             // 결론부 확인용
-  });
+  }));
 })()
 ```
 
 **적재(완전성) 판정**: `sections`에 `이유`가 있고 `lastReason`이 결론부("…주문과 같이 판결한다", "…의견을 밝힌다" 등)로 끝나면 정상. `sections`가 0개면 렌더 미완(짧은 텀 후 1회 재시도) 또는 구독·로그인 문제(`references/troubleshooting.md`)를 순서대로 점검한다.
 
-**(2) 이유 전문 발췌** — `이유`가 길면(장문 판결 수만 자) 한 번에 반환 시 truncated되므로 `window.__bigcaseSecs`에서 키워드 인근만 받는다.
+**(2) 이유 전문 발췌** — 장문 판결의 `이유`는 수만 자라 전부 받으면 컨텍스트를 낭비하므로, `window.__bigcaseSecs`에서 쟁점 키워드 인근만 내놓는다.
 
 ```javascript
 // 질의 특화 키워드 인근 ±2500자 발췌. anchors 앞쪽은 매 검색마다 질의에서 뽑아 교체(공통어만 두지 말 것).
 (() => {
+  if (window.__origBody) { document.body = window.__origBody; window.__origBody = null; }   // 복구(0장)
+  const OUT = s => { if (!window.__origBody) window.__origBody = document.body; const b = document.createElement('body'), p = document.createElement('pre'); p.textContent = s; b.appendChild(p); document.body = b; return 'OUT ' + s.length + '자'; };
   const full = ((window.__bigcaseSecs || []).find(s => s.title === '이유') || {}).text || '';
   const anchors = [/* 질의 특화: 예) '통상임금','고정성' */ '주문', '판단'];
   let i = -1; for (const k of anchors) { i = full.indexOf(k); if (i >= 0) break; }
-  return JSON.stringify({ len: full.length, excerpt: i >= 0 ? full.slice(Math.max(0, i - 200), i + 2500) : full.slice(0, 3000) });
+  return OUT(JSON.stringify({ len: full.length, excerpt: i >= 0 ? full.slice(Math.max(0, i - 200), i + 2500) : full.slice(0, 3000) }));
 })()
-// 더 필요하면 범위를 옮겨가며 .slice(START, END)
+// 더 필요하면 위 slice 범위를 옮기거나 넓혀 다시 실행(한 번에 12,000자 안팎까지)
 ```
 
 짧은 판례는 (1)의 결과만으로 충분할 수 있다.
@@ -132,12 +154,14 @@ lbox와 달리 관련 자료 링크가 모두 실제 `href`이므로 추출이 �
 
 ```javascript
 (() => {
+  if (window.__origBody) { document.body = window.__origBody; window.__origBody = null; }   // 복구(0장)
+  const OUT = s => { if (!window.__origBody) window.__origBody = document.body; const b = document.createElement('body'), p = document.createElement('pre'); p.textContent = s; b.appendChild(p); document.body = b; return 'OUT ' + s.length + '자'; };
   const items = Array.from(document.querySelectorAll('a.appealed-case-side__item')).map(a => ({
     text: (a.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 90),  // "법원 선고일 선고 사건번호 …"
     path: (() => { try { return decodeURIComponent(new URL(a.href).pathname); } catch (e) { return ''; } })(),
     isCurrent: a.className.includes('clicked')
   }));
-  return JSON.stringify({ chain: items });                         // path 앞에 https://bigcase.ai 붙여 navigate
+  return OUT(JSON.stringify({ chain: items }));                    // path 앞에 https://bigcase.ai 붙여 navigate
 })()
 ```
 
@@ -148,11 +172,13 @@ lbox와 달리 관련 자료 링크가 모두 실제 `href`이므로 추출이 �
 
 ```javascript
 (() => {
+  if (window.__origBody) { document.body = window.__origBody; window.__origBody = null; }   // 복구(0장)
+  const OUT = s => { if (!window.__origBody) window.__origBody = document.body; const b = document.createElement('body'), p = document.createElement('pre'); p.textContent = s; b.appendChild(p); document.body = b; return 'OUT ' + s.length + '자'; };
   const path = a => { try { return decodeURIComponent(new URL(a.href).pathname); } catch (e) { return null; } };
   const secs = Array.from(document.querySelectorAll('[class^="CaseParagraph_container"]'));
   const cases = [...new Set(secs.flatMap(s => Array.from(s.querySelectorAll('a'))).map(path)
     .filter(p => p && p.startsWith('/cases/')))];
-  return JSON.stringify({ citedCases: cases.slice(0, 40) });
+  return OUT(JSON.stringify({ citedCases: cases.slice(0, 40) }));
 })()
 ```
 
@@ -160,6 +186,8 @@ lbox와 달리 관련 자료 링크가 모두 실제 `href`이므로 추출이 �
 
 ```javascript
 (() => {
+  if (window.__origBody) { document.body = window.__origBody; window.__origBody = null; }   // 복구(0장)
+  const OUT = s => { if (!window.__origBody) window.__origBody = document.body; const b = document.createElement('body'), p = document.createElement('pre'); p.textContent = s; b.appendChild(p); document.body = b; return 'OUT ' + s.length + '자'; };
   const txt = e => e ? (e.innerText || '').replace(/\s+/g, ' ').trim() : '';
   const path = a => { try { return decodeURIComponent(new URL(a.href).pathname); } catch (e) { return null; } };
   const similar = Array.from(document.querySelectorAll('.ai-similar-side__item')).map(e => ({
@@ -168,7 +196,7 @@ lbox와 달리 관련 자료 링크가 모두 실제 `href`이므로 추출이 �
   }));
   const papers = Array.from(document.querySelectorAll('.literature-case-side__card-wrap')).slice(0, 10)
     .map(e => txt(e.querySelector('.literature-case-side__card-title')).slice(0, 90));
-  return JSON.stringify({ similar, paperTotal: document.querySelectorAll('.literature-case-side__card-wrap').length, papersTop: papers });
+  return OUT(JSON.stringify({ similar, paperTotal: document.querySelectorAll('.literature-case-side__card-wrap').length, papersTop: papers }));
 })()
 ```
 

@@ -2,6 +2,22 @@
 
 SKILL.md 본문이 지시하는 시점에 해당 장만 읽는다. 모든 셀렉터·JS는 2026.6 개편판 라이브 검증본이다. lbox는 Next.js(App Router) 기반이며, 본문은 서버 렌더되어 별도 검색/본문 API 호출 없이 DOM에 들어온다.
 
+## 0. 반환 규약 — 큰 결과는 `get_page_text`로 받는다
+
+`javascript_tool`의 반환값은 약 1,000자에서 `[TRUNCATED]`로 잘린다(Claude Code·Cowork 실측). 카드 10건은 3~4천 자, 본문 머리부는 3천 자를 넘기 쉬워 그대로 반환하면 매번 잘린다. 그래서 이 문서의 추출 JS는 결과를 반환하지 않고 **페이지에 내놓는다**: `OUT()`이 body를 결과 텍스트만 담은 `<pre>`로 잠시 바꾸고 `OUT n자`만 반환하면, `get_page_text`가 그 텍스트를 잘림 없이 돌려준다.
+
+1. **한 번에 보낸다**: [추출 JS] → `get_page_text` → [복구 JS] 세 호출을 `browser_batch` 하나로 보낸다. 결과는 `get_page_text` 출력의 `Source element: <body>` 아래 JSON이다. batch 도구가 없으면 세 호출을 차례로 한다.
+2. **복구 JS**: `if (window.__origBody) { document.body = window.__origBody; window.__origBody = null; } 'restored'` — 떼어 둔 원래 body를 그대로 되돌리므로 페이지 상태·이벤트가 유지된다(2026-09-26 실측: lbox 작업 결과 패널·판례 본문, bigcase 검색 결과 — 복구 뒤 페이지 넘기기·사이드바 펼치기 정상). **복구 전에는 `computer` 클릭·`screenshot`을 하지 않는다**(빈 화면을 누르게 된다). 아래 JS는 모두 첫 줄에서 먼저 복구하므로, batch가 중간에 끊겨도 다음 JS가 되살린다.
+3. 한 번에 내놓는 양은 12,000자 안팎까지로 한다(컨텍스트 절약). 더 필요하면 범위를 옮겨 다시 내놓는다 — `window.__lboxCards`·`window.__lboxMain`에 저장해 둔 값에서 자르면 DOM을 다시 읽지 않아도 된다. 1,000자보다 확실히 작은 결과(탭 클릭 여부·건수 등)는 그대로 반환해도 된다.
+4. `get_page_text`에 JSON이 아니라 원래 페이지 글이 나오면 내놓기가 안 된 것이다 — 추출 JS의 반환값(`OUT n자`인지 오류인지)을 보고 다시 보낸다. 페이지 전체를 `get_page_text`로 읽어 본문을 얻으려 하지 않는다(사이드바·메뉴가 섞인다).
+
+아래 JS는 모두 이 두 줄로 시작한다.
+
+```javascript
+if (window.__origBody) { document.body = window.__origBody; window.__origBody = null; }   // 복구(이전 내놓기가 남아 있으면)
+const OUT = s => { if (!window.__origBody) window.__origBody = document.body; const b = document.createElement('body'), p = document.createElement('pre'); p.textContent = s; b.appendChild(p); document.body = b; return 'OUT ' + s.length + '자'; };
+```
+
 ## 1. 검색 실행 · 결과 카드 추출 · 페이지 순회
 
 ### 1-1. 컴포저 "검색" 모드로 검색 실행
@@ -24,6 +40,8 @@ SKILL.md 본문이 지시하는 시점에 해당 장만 읽는다. 모든 셀렉
 
 ```javascript
 (() => {
+  if (window.__origBody) { document.body = window.__origBody; window.__origBody = null; }   // 복구(0장)
+  const OUT = s => { if (!window.__origBody) window.__origBody = document.body; const b = document.createElement('body'), p = document.createElement('pre'); p.textContent = s; b.appendChild(p); document.body = b; return 'OUT ' + s.length + '자'; };
   const cards = Array.from(document.querySelectorAll('a[data-track-props]')).map(a => {
     let tp; try { tp = JSON.parse(a.getAttribute('data-track-props')); } catch (e) { return null; }
     if (!tp || tp.documentType !== 'precedent') return null;
@@ -47,14 +65,14 @@ SKILL.md 본문이 지시하는 시점에 해당 장만 읽는다. 모든 셀렉
   const seen = new Set();                            // docId 기준 dedup(혹시 모를 2벌 렌더 대비)
   const uniq = cards.filter(c => { if (seen.has(c.docId)) return false; seen.add(c.docId); return true; });
   window.__lboxCards = uniq;                          // 분할 접근용(현재 페이지 한정)
-  return JSON.stringify({ count: uniq.length, items: uniq });
+  return OUT(JSON.stringify({ count: uniq.length, items: uniq }));
 })()
 ```
 
 - `cardText`에는 결과 배지(파기환송/상고기각/원고일부승/청구기각 등)와 **인용 N**(이 판례를 인용한 판례 수)·**조회 N**이 포함된다. 인용 수가 큰 대법원 판례는 선례성이 높다는 신호이므로 triage에서 가중한다.
 - **cardText 오염 자가진단**: 서로 다른 rank의 `cardText`(배지·인용수·조회수)가 전부 동일하면 컨테이너가 카드가 아니라 리스트 전체에 안착한 것이다 — `read_page`로 카드 단위 컨테이너 클래스를 재확인해 셀렉터를 조정한다.
 - `docId` → `url`(`/case/{법원}/{사건번호}`)은 4단계 본문 navigate에 그대로 쓴다.
-- 결과가 커서 truncated되면 `window.__lboxCards`를 `JSON.stringify(window.__lboxCards.slice(0,5))`처럼 인덱스로 분할해 받는다.
+- 반환값은 `OUT n자`뿐이고 카드 JSON은 이어지는 `get_page_text`로 받는다(0장 — 세 호출을 batch 하나로).
 
 ### 1-3. 페이지 순회
 
@@ -93,6 +111,8 @@ SKILL.md 본문이 지시하는 시점에 해당 장만 읽는다. 모든 셀렉
 
 ```javascript
 (() => {
+  if (window.__origBody) { document.body = window.__origBody; window.__origBody = null; }   // 복구(0장)
+  const OUT = s => { if (!window.__origBody) window.__origBody = document.body; const b = document.createElement('body'), p = document.createElement('pre'); p.textContent = s; b.appendChild(p); document.body = b; return 'OUT ' + s.length + '자'; };
   const txt = e => e ? (e.textContent || '').replace(/\s+/g, ' ').trim() : '';
   const sorted = pre => {                                    // id 기준 dedup(2벌 렌더 제거) + 번호순 정렬
     const pfx = 'lbox-paragraph-' + pre + '-', seen = new Set();
@@ -106,8 +126,8 @@ SKILL.md 본문이 지시하는 시점에 해당 장만 읽는다. 모든 셀렉
   window.__lboxMain = mains;                                  // 본문 단락 배열(분할 접근용)
   const judges = sorted('judges').map(txt).filter(Boolean);
   const fullMain = mains.join('\n');
-  return JSON.stringify({
-    title: document.title.replace(/\s*-\s*LBOX.*$/, ''),     // 법원·선고일·사건번호·[사건명]
+  return OUT(JSON.stringify({
+    title: document.title.replace(/\s*[-|]\s*LBOX.*$/, ''),  // 법원·선고일·사건번호·[사건명] — 제목 끝은 ' | LBOX'(2026-09 실측)
     court: txt(document.querySelector('[data-node-id="lbox-paragraph-topheader-1"]')),
     type:  txt(document.querySelector('[data-node-id="lbox-paragraph-topheader-2"]')),
     caseInfo: txt(document.querySelector('[data-node-id="lbox-paragraph-before-1"]')).slice(0, 400), // 당사자·원심판결
@@ -117,23 +137,25 @@ SKILL.md 본문이 지시하는 시점에 해당 장만 읽는다. 모든 셀렉
     recoveredLen: fullMain.length,
     lastMain: (mains[mains.length - 1] || '').slice(-180),    // 결론부 확인용
     judges
-  });
+  }));
 })()
 ```
 
 **적재(완전성) 판정**: `recoveredLen > 0` 이고 (`lastMain`이 "…주문과 같이 판결한다"·"보충의견을 밝힌다" 등 결론부로 끝나거나 `judges.length > 0`)면 정상이다. `recoveredLen`이 거의 0이고 `caseInfo`도 비며 URL이 로그인 페이지로 바뀐 경우에만 재로그인을 의심한다(특정 한 건만 비면 건너뛰고 한 줄로 알림). **`innerText`가 0이라고 로그인 만료로 오판하지 말 것** — 다만 개편 후에는 보통 0이 아니다.
 
-**(2) 본문 전문 발췌** — `main`이 길어(장문 판결 수만 자) 한 번에 반환하면 truncated되므로, `window.__lboxMain`을 인덱스/키워드로 분할해 받는다.
+**(2) 본문 전문 발췌** — 장문 판결의 `main`은 수만 자라 전부 받으면 컨텍스트를 낭비하므로, `window.__lboxMain`에서 쟁점 키워드 인근만 내놓는다.
 
 ```javascript
 // (2-a) 질의 키워드 인근 ±2500자 발췌. anchors = 질의 특화 키워드(1~3개)를 매 검색마다 갱신.
 (() => {
+  if (window.__origBody) { document.body = window.__origBody; window.__origBody = null; }   // 복구(0장)
+  const OUT = s => { if (!window.__origBody) window.__origBody = document.body; const b = document.createElement('body'), p = document.createElement('pre'); p.textContent = s; b.appendChild(p); document.body = b; return 'OUT ' + s.length + '자'; };
   const full = (window.__lboxMain || []).join('\n');
   const anchors = [/* 질의 특화: 예) '통상임금','고정성' */ '주문', '이유', '판단'];
   let i = -1; for (const k of anchors) { i = full.indexOf(k); if (i >= 0) break; }
-  return JSON.stringify({ len: full.length, excerpt: i >= 0 ? full.slice(Math.max(0, i - 200), i + 2500) : full.slice(0, 3000) });
+  return OUT(JSON.stringify({ len: full.length, excerpt: i >= 0 ? full.slice(Math.max(0, i - 200), i + 2500) : full.slice(0, 3000) }));
 })()
-// (2-b) 더 필요하면 범위를 옮겨가며: window.__lboxMain.join('\n').slice(START, END)
+// (2-b) 더 필요하면 위 slice 범위를 옮기거나 넓혀 다시 실행(한 번에 12,000자 안팎까지)
 ```
 
 - **질의 특화 키워드 갱신 필수**: `anchors`의 앞쪽 키워드는 매 검색마다 사용자 질의에서 뽑아 교체한다(예: 채권양도 질의 → `'채권양도'`,`'통지'`,`'대항요건'`). 공통어(`주문/이유/판단`)만 박아두지 말 것.
@@ -147,6 +169,8 @@ SKILL.md 본문이 지시하는 시점에 해당 장만 읽는다. 모든 셀렉
 
 ```javascript
 (() => {
+  if (window.__origBody) { document.body = window.__origBody; window.__origBody = null; }   // 복구(0장)
+  const OUT = s => { if (!window.__origBody) window.__origBody = document.body; const b = document.createElement('body'), p = document.createElement('pre'); p.textContent = s; b.appendChild(p); document.body = b; return 'OUT ' + s.length + '자'; };
   const seen = new Set(), items = [];
   Array.from(document.querySelectorAll('[data-track-click="upperLowerCaseItem"]')).forEach(el => {
     let tp = {}; try { tp = JSON.parse(el.getAttribute('data-track-props')) || {}; } catch (e) {}
@@ -162,7 +186,7 @@ SKILL.md 본문이 지시하는 시점에 해당 장만 읽는다. 모든 셀렉
       url: (court && caseNo) ? 'https://lbox.kr/case/' + encodeURIComponent(court) + '/' + encodeURIComponent(caseNo) : ''
     });
   });
-  return JSON.stringify({ upperLower: items });
+  return OUT(JSON.stringify({ upperLower: items }));
 })()
 ```
 
