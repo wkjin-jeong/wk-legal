@@ -116,6 +116,36 @@ def offline() -> None:
              "</조문></LawService>")
     out = L._extract_articles(ordin, "ordin", "2", "XML")
     check("ordin 제2조만 발췌", "000200" in out and "000100" not in out)
+    txt = L._body_text(L._extract_articles(adm, "admrul", "7", "XML")) or ""
+    check("--text admrul: 발췌 조문만 평문", txt.splitlines()[-1] == "제7조(기준) 본문" and "</" not in txt, txt)
+
+    # 출력 축약 — search 표·get --text
+    srch = ('<?xml version="1.0" encoding="UTF-8"?><LawSearch><target>law</target><키워드>민법</키워드>'
+            '<totalCnt>9</totalCnt><page>1</page><numOfRows>2</numOfRows>'
+            '<law id="1"><법령일련번호>284415</법령일련번호><현행연혁코드>현행</현행연혁코드><법령명한글>민법</법령명한글>'
+            '<법령약칭명></법령약칭명><법령ID>001706</법령ID><법령상세링크>/DRF/lawService.do?OC=***&amp;MST=1</법령상세링크></law>'
+            '<law id="2"><법령일련번호>188376</법령일련번호><법령명한글>난민|법</법령명한글><법령ID>011546</법령ID></law>'
+            '</LawSearch>')
+    tab = (L._search_table(srch, "law") or "").splitlines()
+    check("search 표: 머리 줄·다음 쪽 안내", tab[:1] == ["# law '민법' — totalCnt 9, page 1, 2건 (다음 쪽: --page 2)"], tab[:1])
+    check("search 표: 태그 이름 열·빈 열 생략·링크 제외", tab[1:2] == ["법령명한글 | 법령ID | 법령일련번호 | 현행연혁코드"]
+          and tab[2] == "민법 | 001706 | 284415 | 현행" and tab[3].startswith("난민¦법"), tab)
+    byl = ('<licBylSearch><totalCnt>1</totalCnt><page>1</page><ordinbyl><별표명><![CDATA[(별지) <strong class="x">옥외</strong>]]></별표명>'
+           '<별표서식파일링크>/LSW/flDownload.do?gubun=ELIS&amp;flSeq=1&amp;flNm=%28abc</별표서식파일링크></ordinbyl></licBylSearch>')
+    tab = (L._search_table(byl, "ordinbyl") or "").splitlines()
+    check("search 표: 강조 태그·flNm 제거", tab[2:3] == ["(별지) 옥외 | /LSW/flDownload.do?gubun=ELIS&flSeq=1"], tab)
+    check("search 표: 해석 불가 → None(원문 출력)", L._search_table("<html>오류", "law") is None)
+    law = ('<법령><기본정보><법령ID>010199</법령ID><공포일자>20251216</공포일자><공포번호>21205</공포번호>'
+           '<법종구분>법률</법종구분><법령명_한글>전자금융거래법</법령명_한글><시행일자>20251216</시행일자></기본정보><조문>'
+           '<조문단위><조문여부>전문</조문여부><조문내용>   제2장 전자금융거래 당사자의 권리와 의무</조문내용></조문단위>'
+           '<조문단위><조문여부>조문</조문여부><조문내용>제9조(책임)</조문내용><항><항내용>①손해를 배상한다.</항내용>'
+           '<호><호내용>1. 위조</호내용><목><목내용>가. 변조</목내용></목></호></항><조문참고자료>[제목개정]</조문참고자료></조문단위>'
+           '</조문><부칙><부칙내용>부칙 본문</부칙내용></부칙></법령>')
+    txt = L._body_text(law) or ""
+    check("--text 법령: 기본정보 한 줄·장 제목·항/호/목 들여쓰기·부칙 제외",
+          txt.splitlines()[0] == "전자금융거래법 · 법률 · 법령ID 010199 · 시행 20251216 · 공포 20251216 · 제21205호"
+          and "제2장 전자금융거래 당사자의 권리와 의무" in txt and "\n①손해를 배상한다.\n  1. 위조\n    가. 변조" in txt
+          and "부칙" not in txt and "참고자료" not in txt, txt)
 
     rows = [
         {"명칭": "전자금융감독규정", "시행일자": "20260715", "MST": "2100000282622", "계통ID": "21828"},
@@ -223,6 +253,17 @@ def live() -> None:
         check("B2 --promulgated 공포본", r.returncode == 0 and "<시행일자>20261217</시행일자>" in r.stdout)
         r = run(["get", "--target", "law", "--mst", "283839", "--jo", "32의2"], env=env)
         check("B2 조문별 미시행(개인정보 보호법)", r.returncode == 0 and "20270701" in r.stderr, r.stderr[-300:])
+        # 출력 축약(2.4.14)
+        r = run(["search", "--target", "law", "--query", "민법", "--display", "5"], env=env)
+        check("search 표 출력(원시 XML 아님)", r.returncode == 0 and r.stdout.startswith("# law '민법'")
+              and "법령ID" in r.stdout and "</" not in r.stdout, r.stdout[:200])
+        r = run(["get", "--target", "eflaw", "--lm", "민법", "--jo", "390", "--text"], env=env)
+        check("get --text 법령", r.returncode == 0 and "제390조(채무불이행과 손해배상)" in r.stdout
+              and "법령ID 001706" in r.stdout and "</" not in r.stdout and len(r.stdout) < 600, r.stdout[:200])
+        r = run(["get-asof", "--target", "admrul", "--query", "전자금융감독규정", "--date", "20241225", "--jo", "7",
+                 "--text"], env=env)
+        check("get-asof --text 행정규칙", r.returncode == 0 and r.stdout.splitlines()[0].startswith("전자금융감독규정 · 고시")
+              and "제7조(" in r.stdout and "</" not in r.stdout, r.stdout[:200] + r.stderr[-200:])
         r = run(["get", "--target", "eflaw", "--lm", "민법", "--jo", "390"], env=env)
         check("eflaw --lm 현행 1회 조회", r.returncode == 0 and "<조문번호>390</조문번호>" in r.stdout)
         # 시점 의존: 공소청법(MST 285045)은 2026-10-02 시행 — 그 전까지는 현행 시행본이 없다.

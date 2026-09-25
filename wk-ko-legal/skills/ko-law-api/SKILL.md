@@ -82,6 +82,8 @@ API 호출에는 OC(open.law.go.kr에서 발급한 ID)가 필수다. 스크립�
 > 행정규칙 본문은 짧은 `<행정규칙ID>`(예: 21828 — 버전과 무관한 계통 번호)가 아니라 긴 `<행정규칙일련번호>`를 `--id`에 넣는다.
 
 응답 포맷은 `type=XML`(기본) / `JSON` / `HTML` 중 선택. 본 skill은 **XML을 기본**으로 사용한다.
+
+**출력은 짧게 받는다**: `search`는 표로 출력한다(열 이름 = 응답 태그 이름, 모든 행이 빈 열은 생략 — 원시 XML은 `--raw`). `get`·`get-asof`는 `--text`를 붙여 기본정보 한 줄 + 조문 텍스트(편·장 제목·항·호·목 포함, 부칙·별표 제외)만 받는다 — 민법 제390조 원시 XML 993자 → 189자, 전자금융거래법 제9조 2,543자 → 956자, 법령 검색 5건 2,421자 → 533자(2026-09-26 실측). `--save-to` 파일은 언제나 원시 응답이다(`download --from-search-xml` 호환). 부칙·조문별 시행일자 같은 원시 필드가 필요할 때만 `--text` 없이 받는다.
 파라미터·필드 상세는 `references/api_reference.md` 참조.
 
 ---
@@ -93,7 +95,7 @@ API 호출에는 OC(open.law.go.kr에서 발급한 ID)가 필수다. 스크립�
 ### ① 정식 법령명을 알 때 — 1회 호출
 
 ```bash
-python3 scripts/law_api.py get --target eflaw --lm "민법" --jo 390
+python3 scripts/law_api.py get --target eflaw --lm "민법" --jo 390 --text
 ```
 
 `--lm`은 정식 명칭만 받는다(띄어쓰기 무관). 약칭('자본시장법')·오기는 "조회 결과 없음"(exit 2)이 나오므로 ②로 간다.
@@ -102,20 +104,20 @@ python3 scripts/law_api.py get --target eflaw --lm "민법" --jo 390
 
 ```bash
 python3 scripts/law_api.py search --target law --query "전자금융거래법" --display 5
-python3 scripts/law_api.py get --target eflaw --id <법령ID> --jo 9
+python3 scripts/law_api.py get --target eflaw --id <법령ID> --jo 9 --text
 ```
 
 검색 결과의 `법령명한글`로 법률·시행령·시행규칙을 구분하고 `법령ID`를 쓴다(`법령일련번호`는 버전 번호). 부분일치 검색이라 '민법'에 난민법이 먼저 나올 수 있다.
 
-`--display`를 생략하면 law·admrul·expc 20건, ordin·licbyl·admbyl·ordinbyl 50건이 기본이다(최대 100). `<totalCnt>`가 더 크면 `--page`로 넘긴다.
+`--display`를 생략하면 law·admrul·expc 20건, ordin·licbyl·admbyl·ordinbyl 50건이 기본이다(최대 100). 표 머리 줄의 totalCnt가 표시 건수보다 크면 머리 줄이 안내하는 `--page`로 넘긴다.
 
 ### ③ 행정규칙·자치법규
 
 ```bash
 python3 scripts/law_api.py search --target admrul --query "전자금융감독규정"
-python3 scripts/law_api.py get --target admrul --id <행정규칙일련번호> --jo 7
+python3 scripts/law_api.py get --target admrul --id <행정규칙일련번호> --jo 7 --text
 python3 scripts/law_api.py search --target ordin --query "가평군 옥외광고물"
-python3 scripts/law_api.py get --target ordin --mst <자치법규일련번호> --jo 2
+python3 scripts/law_api.py get --target ordin --mst <자치법규일련번호> --jo 2 --text
 ```
 
 두 API는 조문 지정을 지원하지 않아 전문(행정규칙은 18만 자에 이르기도 한다)이 온다. `--jo`를 주면 스크립트가 해당 조만 발췌해 출력한다. 검색은 부분일치이므로 명칭과 `현행연혁구분`을 확인해 행을 고른다.
@@ -123,9 +125,7 @@ python3 scripts/law_api.py get --target ordin --mst <자치법규일련번호> -
 ### 조문번호와 결과
 
 - `--jo`는 `390`, `제390조`, `제10조의2`처럼 조까지 쓴다(가지조는 '의'로, `제7조제1항`처럼 항·호를 붙이면 조 전체를 받는다). 6자리 인코딩과 4자리 재시도는 스크립트가 처리하고, XML 응답에서 끝내 조문이 없으면 exit 2로 알린다 — 조문번호를 추정해 바꾸지 않는다.
-- 법령 본문(`<법령>`): `<기본정보>`의 `<법령명_한글>`·`<시행일자>`, `<조문단위>`의 `<조문내용>`·`<항>`·`<호>`.
-- 행정규칙(`<AdmRulService>`): `<행정규칙기본정보>` + 평탄한 `<조문내용>`(조·항·호가 한 텍스트).
-- 자치법규(`<LawService>`): `<자치법규기본정보>` + `<조 조문번호='NNNNGG'>` > `<조내용>`.
+- `--text` 출력은 첫 줄이 기본정보(법령명·종류·법령ID(행정규칙은 일련번호·계통ID, 자치법규는 MST·계통ID)·시행일자·공포(발령)일자·번호), 그 아래가 조문이다. 원시 XML 구조(법령 `<법령>`·행정규칙 `<AdmRulService>`·자치법규 `<LawService>`)는 `references/api_reference.md` 4장.
 - 사용자에게는 인용에 필요한 최소 범위만 발췌해 보인다. 상세 구조는 `references/api_reference.md`.
 
 ---
@@ -144,7 +144,7 @@ python3 scripts/law_api.py get --target ordin --mst <자치법규일련번호> -
 
 ```bash
 python3 scripts/law_api.py versions --lid <법령ID>                          # 버전 목록(연혁 포함, LID 한정)
-python3 scripts/law_api.py get-asof --lid <법령ID> --date 20190601 --jo 46  # 기준일 시행본+조문 일괄
+python3 scripts/law_api.py get-asof --lid <법령ID> --date 20190601 --jo 46 --text  # 기준일 시행본+조문 일괄
 ```
 
 법령ID는 기존 `search --target law`로 확보한다(LID 한정이 부분일치 오염 — 예: "민법" 검색 시 난민법 — 을 차단). 단계별 전체 레시피는 `references/api_reference.md` 6-C·7장 참조.
@@ -158,8 +158,8 @@ python3 scripts/law_api.py get-asof --lid <법령ID> --date 20190601 --jo 46  # 
 
 ```bash
 python3 scripts/law_api.py versions --target ordin --query "가평군 옥외광고물"
-python3 scripts/law_api.py get-asof --target ordin --query "가평군 옥외광고물" --lid 2019869 --date 20150101
-python3 scripts/law_api.py get-asof --target admrul --query "전자금융감독규정" --date 20241225 --jo 7
+python3 scripts/law_api.py get-asof --target ordin --query "가평군 옥외광고물" --lid 2019869 --date 20150101 --text
+python3 scripts/law_api.py get-asof --target admrul --query "전자금융감독규정" --date 20241225 --jo 7 --text
 ```
 
 - 검색이 부분일치라 다른 규정·조례가 섞인다("전자금융감독규정" → 시행세칙, "가평군 옥외광고물" → 발전기금 조례). 스크립트는 버전 사이에 고정된 **계통ID**(`행정규칙ID`·`자치법규ID`)로 한 계통만 남긴다: `--lid <계통ID>` → 계통이 하나 → 어느 버전 명칭이 `--query`와 정확히 같은 계통이 하나면 자동 선택. 그 밖에는 **계통 목록(옛 명칭 포함)을 보여주고 exit 2** — 목록에서 골라 `--lid`로 다시 실행한다.
@@ -199,18 +199,18 @@ python3 scripts/law_api.py get-asof --target admrul --query "전자금융감독�
 ### 법령 현행 조문 (시행령·시행규칙 포함)
 
 ```bash
-python3 scripts/law_api.py get --target eflaw --lm "전자금융거래법" --jo 9
-python3 scripts/law_api.py get --target eflaw --lm "전자금융거래법 시행령" --jo 5
+python3 scripts/law_api.py get --target eflaw --lm "전자금융거래법" --jo 9 --text
+python3 scripts/law_api.py get --target eflaw --lm "전자금융거래법 시행령" --jo 5 --text
 # 명칭이 불확실하면 검색 → 법령ID
 python3 scripts/law_api.py search --target law --query "전자금융거래법" --display 5
-python3 scripts/law_api.py get --target eflaw --id <법령ID>
+python3 scripts/law_api.py get --target eflaw --id <법령ID> --text
 ```
 
 ### 행정규칙(고시·훈령) 검색·본문
 
 ```bash
 python3 scripts/law_api.py search --target admrul --query "전자금융감독규정"
-python3 scripts/law_api.py get --target admrul --id <행정규칙일련번호> --jo 7
+python3 scripts/law_api.py get --target admrul --id <행정규칙일련번호> --jo 7 --text
 ```
 
 `--org`는 소관부처 **코드**(예: 금융위원회 1160100)만 받는다 — 기관명을 넣으면 exit 2로 거부한다(API가 기관명을 조용히 무시하기 때문).
@@ -219,7 +219,7 @@ python3 scripts/law_api.py get --target admrul --id <행정규칙일련번호> -
 
 ```bash
 python3 scripts/law_api.py search --target ordin --query "옥외광고물" --org 6110000
-python3 scripts/law_api.py get --target ordin --mst <자치법규일련번호> --jo 2
+python3 scripts/law_api.py get --target ordin --mst <자치법규일련번호> --jo 2 --text
 ```
 
 `--org`는 지자체 **코드**(예: 서울특별시 6110000)만 받는다 — 기관명은 exit 2로 거부한다.
@@ -244,7 +244,7 @@ python3 scripts/law_api.py get --target ordin --mst <자치법규일련번호> -
 > 일부 admbyl 항목은 다운로드 링크 자체가 없다 — 이 경우 본문에 별표가 포함된 형태이므로 모(母) 행정규칙 본문(`get --target admrul`)에서 직접 확인한다.
 
 ```bash
-# 1) 법령 별표·서식 목록 검색 (target=licbyl) → 응답 저장
+# 1) 법령 별표·서식 목록 검색 (target=licbyl) → 응답 저장(파일은 원시 XML, 화면은 표 — 표의 파일링크 열은 download --url에 그대로 쓸 수 있다)
 python3 scripts/law_api.py search --target licbyl --query "위탁지정신청서" \
     --display 20 --save-to <작업 폴더>/byl_search_licbyl.xml
 
@@ -276,10 +276,10 @@ HWP/HWPX는 자동 텍스트 추출이 어렵다 — 파일만 저장하고 사�
 
 ```bash
 # 1) 안건명 키워드로 검색 (예: 임차인 관련)
-python3 scripts/law_api.py search --target expc --query "임차" --display 20 --pretty
+python3 scripts/law_api.py search --target expc --query "임차" --display 20
 
 # 2) 검색 결과의 <법령해석례일련번호>로 본문 조회
-python3 scripts/law_api.py get --target expc --id 332741 --pretty
+python3 scripts/law_api.py get --target expc --id 332741 --text
 ```
 
 #### 법령해석례 인용 형식 (서면용)

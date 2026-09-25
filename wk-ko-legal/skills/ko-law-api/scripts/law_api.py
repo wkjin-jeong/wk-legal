@@ -58,6 +58,7 @@ import urllib.parse
 import urllib.request
 import xml.dom.minidom
 import xml.etree.ElementTree as ET
+import xml.etree.ElementTree as ET
 
 BASE_SEARCH = "https://www.law.go.kr/DRF/lawSearch.do"
 BASE_SERVICE = "https://www.law.go.kr/DRF/lawService.do"
@@ -663,17 +664,143 @@ def cmd_search(args: argparse.Namespace) -> None:
         return
 
     body = http_get(url, no_cache=args.no_cache, strict_errors=True, fmt=args.type)
-    _emit(body, url, args)
+    _emit(body, url, args, None if args.raw else (lambda b: _search_table(b, args.target)))
 
 
-def _emit(body: str, url: str, args: argparse.Namespace) -> None:
-    """응답 출력·저장 공통 경로 — 본문에 echo된 OC(상세링크 등)를 가린 뒤 내보낸다."""
+def _emit(body: str, url: str, args: argparse.Namespace, render=None) -> None:
+    """응답 출력·저장 공통 경로 — 본문에 echo된 OC(상세링크 등)를 가린 뒤 내보낸다.
+
+    render가 있으면(search 표·get --text) 화면에는 그 결과를, --save-to 파일에는 원시 응답을 쓴다
+    (download --from-search-xml 등 원시 XML을 읽는 경로와의 호환).
+    """
     body = _mask_oc_in_body(body, url)
     output = maybe_pretty(body, args.type) if args.pretty else body
-    print(output)
+    shown = None
+    if render is not None:
+        if args.type.upper() != "XML":
+            sys.stderr.write(f"NOTE: 표·평문 출력은 XML 응답에서만 합니다 — type={args.type} 원문을 출력합니다.\n")
+        else:
+            shown = render(body)
+            if shown is None:
+                sys.stderr.write("NOTE: 응답을 해석하지 못해 원문을 그대로 출력합니다.\n")
+    print(shown if shown is not None else output)
     if args.save_to:
         with open(args.save_to, "w", encoding="utf-8") as f:
             f.write(output)
+
+
+# ---------------------------------------------------------------------------
+# 출력 축약 — search 표(기본), get·get-asof --text
+# ---------------------------------------------------------------------------
+
+# search 표의 열 = 응답 태그 이름 그대로(SKILL·api_reference의 필드명과 같다). 모든 행이 빈 열은 뺀다.
+SEARCH_COLUMNS: dict[str, tuple[str, ...]] = {
+    "law": ("법령명한글", "법령약칭명", "법령구분명", "법령ID", "법령일련번호", "시행일자", "공포일자", "공포번호",
+            "제개정구분명", "현행연혁코드", "소관부처명"),
+    "admrul": ("행정규칙명", "행정규칙종류", "행정규칙일련번호", "행정규칙ID", "시행일자", "발령일자", "발령번호",
+               "제개정구분명", "현행연혁구분", "소관부처명"),
+    "admrulOldAndNew": ("신구법명", "법령구분명", "신구법일련번호", "신구법ID", "시행일자", "발령일자", "발령번호",
+                        "제개정구분명", "현행연혁코드", "소관부처명"),
+    "ordin": ("자치법규명", "자치법규종류", "자치법규일련번호", "자치법규ID", "시행일자", "공포일자", "공포번호",
+              "제개정구분명", "지자체기관명"),
+    "expc": ("안건번호", "안건명", "법령해석례일련번호", "질의기관명", "회신기관명", "회신일자"),
+    "licbyl": ("별표명", "별표종류", "별표번호", "관련법령명", "관련법령ID", "별표일련번호", "공포일자",
+               "별표서식파일링크", "별표서식PDF파일링크"),
+    "admbyl": ("별표명", "별표종류", "별표번호", "관련행정규칙명", "관련행정규칙일련번호", "별표일련번호",
+               "발령일자", "별표서식파일링크"),
+    "ordinbyl": ("별표명", "별표종류", "별표번호", "관련자치법규명", "지자체기관명", "관련자치법규일련번호",
+                 "별표일련번호", "자치법규시행일자", "별표서식파일링크"),
+}
+SEARCH_COLUMNS["eflaw"] = SEARCH_COLUMNS["law"]
+
+
+def _xml_root(body: str):
+    try:
+        return ET.fromstring(body[body.find("<"):]) if "<" in body else None
+    except ET.ParseError:
+        return None
+
+
+def _cell(text: str | None) -> str:
+    """표·평문용 한 줄 값 — 태그(검색어 강조 <strong> 등) 제거, 공백 정리, 열 구분자 치환."""
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", text or "")).strip().replace("|", "¦")
+
+
+def _search_table(body: str, target: str) -> str | None:
+    """검색 응답 XML → 머리 한 줄(건수·쪽) + 표. 해석할 수 없으면 None(원문 출력)."""
+    root = _xml_root(body)
+    if root is None:
+        return None
+    items = [c for c in root if len(c)]
+    meta = {c.tag: (c.text or "").strip() for c in root if not len(c)}
+    cols = SEARCH_COLUMNS.get(target) or tuple(dict.fromkeys(
+        e.tag for it in items for e in it if not e.tag.endswith("상세링크")))
+    rows = [[_cell(it.findtext(c)) for c in cols] for it in items]
+    for r in rows:                              # 자치법규 별표 링크의 긴 파일명 파라미터는 다운로드에 필요 없다(실측)
+        for i, c in enumerate(cols):
+            if c.endswith("링크"):
+                r[i] = re.sub(r"&flNm=[^&]*", "", r[i])
+    keep = [i for i in range(len(cols)) if any(r[i] for r in rows)]
+    total, page = meta.get("totalCnt", "?"), meta.get("page", "1")
+    head = f"# {target} '{meta.get('키워드', '')}' — totalCnt {total}, page {page}, {len(items)}건"
+    try:
+        per = int(meta.get("numOfRows") or len(items) or 1)
+        if int(total) > (int(page) - 1) * per + len(items):
+            head += f" (다음 쪽: --page {int(page) + 1})"
+    except ValueError:
+        pass
+    lines = [head]
+    if items:
+        lines.append(" | ".join(cols[i] for i in keep))
+        lines += [" | ".join(r[i] for i in keep) for r in rows]
+    return "\n".join(lines)
+
+
+def _body_text(body: str) -> str | None:
+    """본문 XML → 평문(기본정보 한 줄 + 조문 텍스트). 부칙·별표·연락처 등은 뺀다. 해석할 수 없으면 None."""
+    root = _xml_root(body)
+    if root is None:
+        return None
+    out: list[str] = []
+
+    def info_line(block: str, fields: tuple[tuple[str, str], ...]) -> str:
+        b = root.find(block)
+        vals = [(fmt, _cell(b.findtext(tag)) if b is not None else "") for fmt, tag in fields]
+        return " · ".join(fmt.format(v) for fmt, v in vals if v)
+
+    if root.tag == "법령":                                         # law·eflaw
+        out.append(info_line("기본정보", (("{}", "법령명_한글"), ("{}", "법종구분"), ("법령ID {}", "법령ID"),
+                                          ("시행 {}", "시행일자"), ("공포 {}", "공포일자"), ("제{}호", "공포번호"),
+                                          ("{}", "제개정구분"), ("{}", "소관부처"))))
+        for u in root.iter("조문단위"):
+            main = (u.findtext("조문내용") or "").strip()
+            if u.findtext("조문여부") != "조문":                    # 편·장·절 제목
+                if main:
+                    out.append("\n" + main)
+                continue
+            out.append("\n" + main)
+            for e in u.iter():
+                if e.tag in ("항내용", "호내용", "목내용") and (e.text or "").strip():
+                    out.append({"항내용": "", "호내용": "  ", "목내용": "    "}[e.tag] + e.text.strip())
+    elif root.tag == "AdmRulService":                              # admrul
+        out.append(info_line("행정규칙기본정보", (("{}", "행정규칙명"), ("{}", "행정규칙종류"),
+                                                  ("일련번호 {}", "행정규칙일련번호"), ("계통ID {}", "행정규칙ID"),
+                                                  ("시행 {}", "시행일자"), ("발령 {}", "발령일자"), ("제{}호", "발령번호"),
+                                                  ("{}", "소관부처명"), ("현행여부 {}", "현행여부"))))
+        out += ["\n" + (e.text or "").strip() for e in root.findall("조문내용") if (e.text or "").strip()]
+    elif root.tag == "LawService":                                 # ordin
+        out.append(info_line("자치법규기본정보", (("{}", "자치법규명"), ("{}", "지자체기관명"),
+                                                  ("MST {}", "자치법규일련번호"), ("계통ID {}", "자치법규ID"),
+                                                  ("시행 {}", "시행일자"), ("공포 {}", "공포일자"), ("제{}호", "공포번호"),
+                                                  ("{}", "제개정정보"))))
+        out += ["\n" + (e.text or "").strip() for e in root.iter("조내용") if (e.text or "").strip()]
+    else:                                                          # 해석례 등 — 짧은 값은 한 줄, 긴 값은 단락
+        for e in root.iter():
+            t = (e.text or "").strip()
+            if e is root or len(e) or not t or e.tag.endswith(("링크", "코드")):
+                continue
+            out.append(f"{e.tag}: {t}" if len(t) <= 80 and "\n" not in t else f"\n[{e.tag}]\n{t}")
+    return "\n".join(out).strip()
 
 
 # ---------------------------------------------------------------------------
@@ -800,7 +927,7 @@ def cmd_get(args: argparse.Namespace) -> None:
     if args.jo and args.target in LOCAL_JO_TARGETS:
         body = _extract_articles(body, args.target, args.jo, args.type)
 
-    _emit(body, url, args)
+    _emit(body, url, args, _body_text if args.text else None)
 
 
 def _law_to_effective(body: str, url: str, oc: str, args: argparse.Namespace,
@@ -1800,7 +1927,7 @@ def cmd_get_asof(args: argparse.Namespace) -> None:
                                             "조문번호가 바뀌었을 수 있습니다.")
     if args.jo and args.target in LOCAL_JO_TARGETS:
         body = _extract_articles(body, args.target, args.jo, args.type)
-    _emit(body, url, args)
+    _emit(body, url, args, _body_text if args.text else None)
 
 
 # ---------------------------------------------------------------------------
@@ -1889,6 +2016,8 @@ def make_parser() -> argparse.ArgumentParser:
     s.add_argument("--efyd", help="시행일자 범위 YYYYMMDD~YYYYMMDD")
     s.add_argument("--ancyd", help="공포일자 범위 YYYYMMDD~YYYYMMDD")
     s.add_argument("--sort", help="정렬: lasc/ldes(법령명), dasc/ddes(공포일), ndes 등")
+    s.add_argument("--raw", action="store_true",
+                   help="원시 응답(XML) 그대로 출력 — 기본은 표. --save-to 파일은 늘 원시 응답")
     s.set_defaults(func=cmd_search)
 
     # get
@@ -1910,6 +2039,8 @@ def make_parser() -> argparse.ArgumentParser:
     g.add_argument("--efyd", help="시행일자 YYYYMMDD (eflaw --mst와 함께)")
     g.add_argument("--ancyd", help="공포일자 YYYYMMDD")
     g.add_argument("--lang", choices=["KO", "EN"], help="언어 (KO 기본, EN: 영문번역본 — 일부 법령만)")
+    g.add_argument("--text", action="store_true",
+                   help="평문 출력(기본정보 한 줄 + 조문 텍스트, 부칙·별표 제외) — XML에서만. --save-to 파일은 원시 XML")
     g.set_defaults(func=cmd_get)
 
     # download
@@ -1974,6 +2105,8 @@ def make_parser() -> argparse.ArgumentParser:
     a.add_argument("--org", type=_org_code, help="소관부처 코드 (행정규칙) / 시·도 코드 (자치법규) — 숫자 코드만")
     a.add_argument("--sborg", type=_org_code, help="자치법규 시·군·구 코드")
     a.add_argument("--jo", help="조문번호 (예: 46 또는 '제46조'). admrul·ordin은 받은 본문에서 발췌")
+    a.add_argument("--text", action="store_true",
+                   help="평문 출력(기본정보 한 줄 + 조문 텍스트) — XML에서만. --save-to 파일은 원시 XML")
     a.set_defaults(func=cmd_get_asof)
 
     return p
