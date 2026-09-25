@@ -76,6 +76,14 @@ def rel(root: Path, p: Path) -> str:
     return nfc(os.path.relpath(p.resolve(), root.resolve()))
 
 
+def same_or_nested(a: Path, b: Path) -> bool:
+    """두 경로가 같거나 한쪽이 다른 쪽 안에 있는지(NFC·심볼릭 링크 무관)."""
+    if a.exists() and b.exists() and os.path.samefile(a, b):
+        return True
+    x, y = nfc(str(a.resolve())), nfc(str(b.resolve()))
+    return x == y or x.startswith(y + os.sep) or y.startswith(x + os.sep)
+
+
 # ── front-matter·페이지 ────────────────────────────────────────────────
 
 def parse_value(v: str):
@@ -91,7 +99,7 @@ def parse_value(v: str):
 
 def read_page(path: Path):
     """(front-matter dict 또는 None, 본문)"""
-    text = path.read_text(encoding="utf-8")
+    text = path.read_text(encoding="utf-8-sig")  # BOM이 붙은 쪽 파일도 front-matter로 읽는다
     if not text.startswith("---"):
         return None, text
     lines = text.split("\n")
@@ -130,7 +138,7 @@ def right_page(notes) -> int | None:
 
 def parse_index_md(path: Path) -> dict:
     info = {"총쪽수": None, "변환": None, "누락": None, "표식": None, "rows": []}
-    for line in path.read_text(encoding="utf-8").split("\n"):
+    for line in path.read_text(encoding="utf-8-sig").split("\n"):
         if m := re.match(r"^-\s*원본:.*\((\d+)쪽\)", line):
             info["총쪽수"] = int(m.group(1))
         elif m := re.match(r"^-\s*변환:\s*(\d+)쪽\s*/\s*누락:\s*(.+)$", line):
@@ -251,7 +259,7 @@ def cmd_discover(a) -> int:
             (found if done else other).append(d)  # pages/만 있고 _index.md가 없거나 쪽이 없으면 변환 미완성
             dirs.remove("pages")
     for d in sorted(found):
-        print(json.dumps({"record": rel(root, Path(d)), "서명": "현행"}, ensure_ascii=False))
+        print(json.dumps({"record": rel(root, Path(d)), "서명": "쪽 단위 변환본(세대·규격은 gate가 판정)"}, ensure_ascii=False))
     for d in sorted(other):
         print(json.dumps({"record": rel(root, Path(d)), "서명": "_index.md 없음(변환 미완성 또는 규격 밖) — 입력으로 잡지 않음"},
                          ensure_ascii=False))
@@ -305,9 +313,13 @@ def gate_record(root: Path, rec: Path) -> dict:
             head = m.group(1).strip()
             if head not in FIXED_MARKS and not re.fullmatch(r"[\d\s.,~-]+", head) and \
                     (any(v in head for v in MASK_VARIANTS) or head.startswith(("판독", "불명", "식별"))):
-                odd[head] = odd.get(head, 0) + 1
+                # 터미널에는 표식 종류만 — 대괄호 안의 나머지(가린 인명·번호일 수 있음)는 내보내지 않는다
+                kind = next((v for v in sorted(MASK_VARIANTS, key=len, reverse=True) if v in head), head[:2])
+                odd[kind] = odd.get(kind, 0) + 1
     if gen == "혼재":
         err.append("front-matter 세대 혼재")
+    elif gen == "규격 밖(front-matter 없음)":
+        err.append("front-matter 없음 — 규격 밖 변환본은 입력으로 잡지 않는다(어댑터로 규격 형태로 만든 뒤 B등급)")
     idx = rec / "_index.md"
     if not idx.exists():
         err.append("_index.md 없음")
@@ -324,7 +336,7 @@ def gate_record(root: Path, rec: Path) -> dict:
         if info["표식"] is not None and info["표식"] != marks:
             warn.append(f"표식 개수 차이: _index.md {info['표식']} / 재집계 {marks}")
     if odd:
-        warn.append("고정 표식 밖 표기: " + ", ".join(f"[{k}]×{v}" for k, v in sorted(odd.items())))
+        warn.append("고정 표식 밖 표기(종류×건수): " + ", ".join(f"[{k}…]×{v}" for k, v in sorted(odd.items())))
     grade = {"현행": "A", "구 규격(12키)": "A′"}.get(gen) if not err else None
     return {"record": rp, "세대": gen, "등급": grade, "쪽수": len(pages), "표식": marks, "오류": err, "경고": warn}
 
@@ -496,14 +508,22 @@ def cmd_import(a) -> int:
     stem = nfc(src.name)
     dest = root / dest_base / (nfc(a.bundle) if a.bundle else "") / stem
     rid = nfc(f"{a.bundle}/{stem}") if a.bundle else stem
+    if same_or_nested(src, dest):  # 제자리 --replace는 복사 전에 원천을 지운다
+        die(f"{rel(root, src)}: 변환 산출 폴더가 반입 대상과 같거나 서로 포함됨 — 이미 저장소에 있는 변환본은 "
+            "import하지 않고 gate → index로 등록한다")
     if dest.exists():
         prev = manifest_record(m, rid)
         same = prev and orig and prev.get("원본") and prev["원본"]["sha256"] == orig["sha256"]
         if not a.replace:
             die(f"{rel(root, dest)} 이미 있음 — " + ("재반입이면 --replace" if same else
                 "같은 stem의 다른 문서면 --bundle <묶음>, 재반입이면 --replace"))
+    tmp = dest.with_name(f".{dest.name}.반입중")  # 복사가 끝난 뒤에만 기존 폴더를 바꾼다(점 폴더라 discover가 건너뜀)
+    if tmp.exists():
+        shutil.rmtree(tmp)
+    shutil.copytree(src, tmp, ignore=shutil.ignore_patterns("_work", ".*"))
+    if dest.exists():
         shutil.rmtree(dest)
-    shutil.copytree(src, dest, ignore=shutil.ignore_patterns("_work", ".*"))
+    os.replace(tmp, dest)
     g = gate_record(root, dest)
     upsert_record(m, rid, rel(root, dest), 세대=g["세대"], 등급=g["등급"], 분류=a.category, 변환모델=a.model,
                   원본=orig, 반입={"출처": str(src), "반입일": datetime.date.today().isoformat()})
@@ -548,6 +568,11 @@ VOL_RE = re.compile(r"^(본권|제\s*\d+\s*권|별권\s*\d*)\s*(.*)$")
 DITTO = {"〃", "″", "\"", "”", "상동", "동"}
 
 
+def norm_vol(v) -> str | None:
+    """권 식별자 비교용 — 공백을 없앤다('별권 5' = '별권5', '제 3 권' = '제3권')."""
+    return re.sub(r"\s+", "", nfc(str(v))) if v else None
+
+
 def find_col(head: list[str], *alts: str, skip: set[int] = frozenset()) -> int | None:
     """머리글 부분일치. alts는 우선순위 순의 후보이고, 후보 안의 '+'는 모두 포함을 뜻한다."""
     for alt in alts:
@@ -590,14 +615,15 @@ def cmd_evlist(a) -> int:
                         v = last[k]
                         row["채움"].append(k)
                     row[k] = v
-                    last[k] = v
                 no, pg = tr[c_no], tr[c_pg]
                 row["순번표기"] = no
                 row["괄호순번"] = bool(re.fullmatch(r"\(\s*\d+\s*\)", no))
-                row["순번"] = int(re.sub(r"\D", "", no)) if re.search(r"\d", no) else None
+                nm = re.search(r"(\d+)(?:\s*(?:-|의)\s*(\d+))?", no)  # '12-1'은 순번 12의 가지 1
+                row["순번"] = int(nm.group(1)) if nm else None
+                row["순번가지"] = int(nm.group(2)) if nm and nm.group(2) else None
                 row["쪽수원문"], row["가지"], row["권전체"], row["공판기록"] = pg, None, False, False
                 if vm := VOL_RE.match(pg):
-                    vol, pg = re.sub(r"\s+", "", vm.group(1)), vm.group(2).strip()
+                    vol, pg = norm_vol(vm.group(1)), vm.group(2).strip()
                     row["권전체"] = not pg and row["순번"] is not None
                 if km := re.match(r"^공\s*(\d+)", pg):
                     row["공판기록"], pg = True, km.group(1)
@@ -611,8 +637,9 @@ def cmd_evlist(a) -> int:
                     st = int(pg)
                 row["시작면"], row["끝면"], row["끝면_기재"] = st, en, en is not None
                 if row["순번"] is None and st is None and not any(row[k] for k in cols):
-                    continue  # 권 전환만 있는 줄
+                    continue  # 권 전환만 있는 줄 — ditto 기준값(last)을 덮어쓰지 않는다
                 rows.append(row)
+                last.update({k: row[k] for k in cols})
     # 끝면: 같은 권의 다음 행 시작면 − 1
     for v in {r["권"] for r in rows}:
         rs = [r for r in rows if r["권"] == v and r["시작면"] is not None and not r["공판기록"]]
@@ -626,7 +653,8 @@ def cmd_evlist(a) -> int:
     save_manifest(out, m)
     print(json.dumps({"목록ID": a.list_id, "행": len(rows), "권": sorted({r["권"] for r in rows}),
                       "쪽수공란": sum(1 for r in rows if r["시작면"] is None),
-                      "괄호순번": sum(r["괄호순번"] for r in rows), "채움행": sum(bool(r["채움"]) for r in rows),
+                      "괄호순번": sum(r["괄호순번"] for r in rows), "가지순번": sum(r["순번가지"] is not None for r in rows),
+                      "채움행": sum(bool(r["채움"]) for r in rows),
                       "의견기재": sum(bool(r["증거의견"]) for r in rows), "제외표": skipped}, ensure_ascii=False))
     return 0 if rows else 3
 
@@ -635,7 +663,7 @@ def cmd_evlist(a) -> int:
 
 def pages_by_volume(out: Path) -> dict[str, list[dict]]:
     m = load_manifest(out)
-    vol = {r["record_id"]: r.get("권") for r in m["records"]
+    vol = {r["record_id"]: norm_vol(r.get("권")) for r in m["records"]
            if r.get("권") and str(r.get("printed_page_뜻") or "").startswith("기록 면수")}
     by = {}
     for row in read_jsonl(work(out) / "색인.jsonl"):
@@ -650,10 +678,13 @@ def cmd_assign(a) -> int:
     by = pages_by_volume(out)
     if not ev or not by:
         die("증거목록 또는 대상 record 없음 — evlist 실행, 매니페스트 records[]에 권과 printed_page_뜻('기록 면수') 기재 필요", 3)
+    listed = {norm_vol(r["권"]) for r in ev}
+    orphan = sorted(v for v in by if v not in listed)  # 매니페스트의 권이 목록 어디에도 없으면 그 권은 전부 미배정이 된다
     result = []
     for v, pages in by.items():
-        rows = sorted([r for r in ev if r["권"] == v and r["시작면"] is not None], key=lambda r: (r["시작면"], r["가지"] or 0))
-        whole = next((r for r in ev if r["권"] == v and r["권전체"]), None)
+        rows = sorted([r for r in ev if norm_vol(r["권"]) == v and r["시작면"] is not None],
+                      key=lambda r: (r["시작면"], r["가지"] or 0))
+        whole = next((r for r in ev if norm_vol(r["권"]) == v and r["권전체"]), None)
         starts = {p["printed_page"] for p in pages}
         cur = []
         for p in pages:
@@ -665,14 +696,14 @@ def cmd_assign(a) -> int:
                 state = "확정" if hit and hit["시작면"] in starts else "추정"  # 가지 면수 행은 쪽으로 배정하지 않는다
             cur.append({"record_id": p["record_id"], "pdf_page": p["pdf_page"], "printed_page": pp, "권": v,
                         "목록ID": a.list_id, "순번": hit["순번"] if hit else None,
-                        "상태": state if hit else "미배정"})
+                        "순번가지": hit.get("순번가지") if hit else None, "상태": state if hit else "미배정"})
         # 면수 없는 쪽: 앞뒤 구간으로 귀속(추정)
         for i, c in enumerate(cur):
             if c["printed_page"] is None and not whole:
                 prev = next((x for x in reversed(cur[:i]) if x["printed_page"] is not None), None)
                 nxt = next((x for x in cur[i + 1:] if x["printed_page"] is not None), None)
                 if prev and prev["순번"] is not None:
-                    c["순번"], c["상태"] = prev["순번"], "추정"
+                    c["순번"], c["순번가지"], c["상태"] = prev["순번"], prev["순번가지"], "추정"
                     c["귀속"] = [prev["printed_page"], nxt["printed_page"] if nxt else None]
                     c["경계걸침"] = bool(nxt and nxt["순번"] != prev["순번"])
         result += cur
@@ -680,8 +711,10 @@ def cmd_assign(a) -> int:
     cnt = {}
     for c in result:
         cnt[c["상태"]] = cnt.get(c["상태"], 0) + 1
-    print(json.dumps({"목록ID": a.list_id, "쪽": len(result), **cnt}, ensure_ascii=False))
-    return 0
+    print(json.dumps({"목록ID": a.list_id, "쪽": len(result), **cnt,
+                      **({"권_불일치": {"매니페스트에만": orphan, "목록의 권": sorted(x for x in listed if x)}} if orphan else {})},
+                     ensure_ascii=False))
+    return 3 if orphan else 0
 
 
 def card_ranges(out: Path) -> dict[str, list[tuple[int, int]]]:
@@ -715,7 +748,7 @@ def cmd_coverage(a) -> int:
         by = pages_by_volume(out)
         for r in read_jsonl(work(out) / f"증거목록_{a.list_id}.jsonl"):
             have = set()
-            for p in by.get(r["권"], []):
+            for p in by.get(norm_vol(r["권"]), []):
                 have |= {x for x in (p["printed_page"], p["우측면"]) if x is not None}
             if r["권전체"]:
                 held, state = sorted(have), "전부" if have else "없음"
@@ -852,6 +885,17 @@ def squash(s: str, drop_titles: bool = False) -> str:
     return re.sub(r"[\s|]+", "", s)
 
 
+def in_order(parts: list[str], hay: str) -> bool:
+    """중략(…)으로 나눈 조각이 원문에 차례대로 나오는지."""
+    pos = 0
+    for x in parts:
+        i = hay.find(x, pos)
+        if i < 0:
+            return False
+        pos = i + len(x)
+    return True
+
+
 OPEN_MARKS = ["원본 PDF 확인 필요", "면수 확인 필요", "변호사 확정 필요", "행 좌표 필요", "프레임 필요", "확인 필요",
               "[판례 미확인]", "[법령 미확인]", "[불명확", "[판독불가", "[마스킹]"]
 QUOTE_RE = re.compile(r"(?:[\"“]([^\"“”\n]{2,})[\"”]|「([^」\n]{2,})」)\s*\{\{p:([^}]+)\}\}")  # 「」는 원문에 큰따옴표가 든 구절용
@@ -900,10 +944,18 @@ def cmd_verify(a) -> int:
                 key = (rid, s, e)
                 if key not in cache:
                     pf = dict(page_files(paths[rid]))
-                    raw = "".join(read_page(pf[i])[1] for i in range(s, e + 1) if i in pf)
-                    cache[key] = squash(raw) + "\x00" + squash(raw, drop_titles=True)  # 제목 인용 / 쪽 경계 인용
-                parts = [squash(x) for x in re.split(r"…+|\.{3,}|\(중략\)|\[중략\]", q)]
-                if not all(x in cache[key] for x in parts if x):
+                    if s > e or any(i not in pf for i in range(s, e + 1)):
+                        cache[key] = None  # 요약 좌표와 같이 좌표의 쪽이 모두 있어야 한다
+                    else:
+                        raw = "".join(read_page(pf[i])[1] for i in range(s, e + 1))
+                        cache[key] = (squash(raw), squash(raw, drop_titles=True))  # 제목 인용 / 쪽 경계 인용
+                if cache[key] is None:
+                    fails.append({"파일": f, "줄": ln, "좌표": tag, "사유": "좌표 해석 불가(없는 쪽)"})
+                    continue
+                parts = [x for x in (squash(y) for y in re.split(r"…+|\.{3,}|\(중략\)|\[중략\]", q)) if x]
+                if not parts or (len(parts) > 1 and max(map(len, parts)) < 4):
+                    fails.append({"파일": f, "줄": ln, "좌표": tag, "사유": "인용 조각이 없거나 너무 짧음(중략 인용은 가장 긴 조각 4자 이상)", "인용": q})
+                elif not any(in_order(parts, hay) for hay in cache[key]):
                     fails.append({"파일": f, "줄": ln, "좌표": tag, "사유": "원문 불일치", "인용": q})
     if a.report:
         write_atomic(Path(a.report), json.dumps(fails, ensure_ascii=False, indent=2) + "\n")
@@ -952,6 +1004,7 @@ def cmd_sum(a) -> int:
     rec = resolve_record(root, a.record, a.out)
     lo, hi = parse_range(a.pages)
     total, n, uncertain, excluded, bad, groups, used, warn, seg, mid, mism = 0.0, 0, [], 0, [], {}, set(), [], 0.0, 0.0, []
+    guessed = 0
     if a.by and not a.report:
         die("--by는 --report와 함께 쓴다(집계 키에 인명이 들 수 있어 터미널에 출력하지 않는다)")
     want = re.sub(r"\s+", "", a.col) if a.col else None
@@ -976,7 +1029,7 @@ def cmd_sum(a) -> int:
             bi = find_col(head, re.sub(r"\s+", "", a.by)) if a.by else None
             if any(len(r) != len(head) for r in rows):
                 warn.append(f"{pn}쪽: 머리글 {len(head)}열과 칸 수가 다른 행이 있음")
-            last = None
+            last, tsum, tn = None, 0.0, 0
             for ri, r in enumerate(rows, 1):
                 cell = re.sub(r"\[강조:\s*([^\]]*)\]|\*\*", r"\1", r[ci] if ci < len(r) else "")
                 if is_agg(r):
@@ -996,12 +1049,21 @@ def cmd_sum(a) -> int:
                     if v is None:
                         bad.append(f"{pn}쪽 {ri}행")
                     else:
-                        total, n, seg, mid, last = total + v, n + 1, seg + v, mid + v, (pn, ri, v)
-                        if bi is not None and bi < len(r):
-                            g = groups.setdefault(r[bi], {"합계": 0.0, "건수": 0})
+                        total, n, seg, mid, tsum, tn = total + v, n + 1, seg + v, mid + v, tsum + v, tn + 1
+                        gk = r[bi] if bi is not None and bi < len(r) else None
+                        if gk is not None:
+                            g = groups.setdefault(gk, {"합계": 0.0, "건수": 0})
                             g["합계"], g["건수"] = g["합계"] + v, g["건수"] + 1
-            if last and n > 2 and abs((total - last[2]) - last[2]) < 0.5:
-                total, n, excluded = total - last[2], n - 1, excluded + 1
+                        unlabeled = not any(re.search(r"[가-힣A-Za-z]", c) for k, c in enumerate(r) if k != ci)
+                        last = (pn, ri, v, unlabeled, gk)
+            # 라벨 없는 말미 합계 행: 숫자 외 칸에 글자가 없는 표의 마지막 행이 같은 표(또는 여러 쪽에 걸친 범위 전체)의
+            # 위 행 합과 같을 때만 합계로 본다. '잔금'처럼 라벨이 있는 행은 합계와 값이 같아도 데이터다
+            if last and last[3] and last[1] == len(rows) and (
+                    (tn > 2 and abs((tsum - last[2]) - last[2]) < 0.5) or (n > 2 and abs((total - last[2]) - last[2]) < 0.5)):
+                total, n, excluded, guessed = total - last[2], n - 1, excluded + 1, guessed + 1
+                if last[4] is not None:
+                    groups[last[4]]["합계"] -= last[2]
+                    groups[last[4]]["건수"] -= 1
                 warn.append(f"{last[0]}쪽 {last[1]}행: 라벨 없는 말미 행이 위 행들의 합과 같아 합계 행으로 보고 제외함")
     if not used:
         die("대상 열을 가진 표가 없음 — --col 철자 또는 --col-index 확인")
@@ -1009,7 +1071,7 @@ def cmd_sum(a) -> int:
         write_atomic(Path(a.report), json.dumps(dict(sorted(groups.items(), key=lambda kv: -kv[1]["합계"])),
                                                 ensure_ascii=False, indent=2) + "\n")
     res = {"읽은열": sorted(used), "합계": int(total) if total == int(total) else total, "건수": n,
-           "소계·합계행_제외": excluded, "표식셀_pdf쪽(합산 제외)": uncertain, "숫자아님(합산 제외)": bad, "경고": warn}
+           "소계·합계행_제외": excluded, "말미행_합계추정": guessed, "표식셀_pdf쪽(합산 제외)": uncertain, "숫자아님(합산 제외)": bad, "경고": warn}
     if a.check:
         res["소계_불일치"] = mism
     print(json.dumps(res, ensure_ascii=False))
