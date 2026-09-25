@@ -37,7 +37,7 @@ lbox.kr 로그인 + 주석·실무서 **구독이 항상 활성**이라고 전�
 3. `/task/{id}`로 이동하며 결과 패널이 열립니다(기본 **판례** 탭).
 4. 결과 패널 상단 탭에서 **"주석·실무서" 탭**을 클릭해 주석서 결과로 전환합니다. 이 탭은 **패널 안의 `role="tab"` 버튼**이며, **좌측 내비게이션의 "주석·실무서" 링크(`/book/list`로 이동)와 다릅니다** — 좌측 링크를 누르면 검색 결과를 잃고 도서 목록으로 가버리니 주의하세요(셀렉터 구분법은 `references/extraction.md` 1장).
 
-> **검색·탭 전환 직후 짧게 대기**: 클릭과 추출 `javascript_tool` 호출을 분리하고 사이에 짧은 텀을 둡니다(timeout 회피).
+> **이동·추출은 batch 한 번에**: 클릭·`navigate` 직후 곧바로 JS를 실행하면 timeout이 날 수 있으므로, 같은 batch 안에서 `computer` `wait` 2~3초를 먼저 넣고 추출합니다(`references/extraction.md` 0장).
 
 법령·문서유형으로 좁히려면: (ⓐ) 주석·실무서 탭의 필터 칩(있으면 문서유형·법령)을 사용하거나, (ⓑ) 각 결과의 **도서명·breadcrumb**으로 결과 단계에서 선별하거나, (ⓒ) `https://lbox.kr/book/list`(문서유형·법령 필터가 있는 도서 목록)에서 대상 도서를 먼저 확인합니다. 자세한 건 `references/filter-map.md`.
 
@@ -117,7 +117,7 @@ lbox.kr은 구독자에게 본문 직접 인용을 허용합니다. 분량을 �
 
 ## 문제 발생 시
 
-증상별 대응은 `references/troubleshooting.md` 참조. 핵심: ① 본문은 `data-node-id`/`data-viewer-type="header"` 형제 수집으로 읽고 **2벌 렌더는 node-id로 dedup**, ② `navigate`/클릭과 `javascript_tool`은 분리 호출, ③ 결과 JSON에 raw URL·쿼리스트링·검색 키워드를 담지 말 것(`[BLOCKED]` 회피), ④ "주석·실무서"는 **패널 탭**을 누를 것(좌측 내비 링크 아님).
+증상별 대응은 `references/troubleshooting.md` 참조. 핵심: ① 본문은 `data-node-id`/`data-viewer-type="header"` 형제 수집으로 읽고 **2벌 렌더는 node-id로 dedup**, ② `navigate`/클릭 뒤에는 batch 안에서 `computer` `wait`로 기다린 뒤 추출(timeout이 나면 그 페이지만 분리 호출), ③ 결과 JSON에 raw URL·쿼리스트링·검색 키워드를 담지 말 것(`[BLOCKED]` 회피), ④ "주석·실무서"는 **패널 탭**을 누를 것(좌측 내비 링크 아님).
 
 ## 금지 사항
 

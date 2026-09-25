@@ -20,7 +20,7 @@
 
 - **본문 visit 결과가 1,000~2,000자뿐 / 조문·참고문헌만 있음**: 조문 본문 노드 특성. SKILL 5.1 절차로 같은 도서·breadcrumb 부모의 하위 노드 카드를 추가 visit한다.
 
-- **`Runtime.evaluate timed out`**: `navigate`·클릭 직후 곧바로 JS 호출 시 발생. 분리 호출 + 짧은 텀. 두 번 실패하면 그 카드 건너뜀. JS 내부에 대기 루프 금지.
+- **`Runtime.evaluate timed out`**: `navigate`·클릭 직후 곧바로 JS 호출 시 발생. batch 안에서 이동·클릭 뒤에 `computer` `wait` 2~3초를 넣는 것이 기본이다(`references/extraction.md` 0장). 그래도 timeout이면 그 페이지만 이동/클릭과 추출을 별개 호출로 나누고 텀을 늘린다. 두 번 이상 retry해도 실패하면 그 카드는 건너뛴다. **JS 내부에 대기 루프를 넣지 말 것**(기다림은 `computer` `wait`로, JS 안의 짧은 대기는 최상위 `await`로 — async IIFE는 `{}`가 돌아온다).
 
 - **카드 셀렉터가 안 먹힘**: `a[data-track-props]`(documentType `scholar`)가 0건이면 (ⓐ) 주석·실무서 탭이 활성인지, (ⓑ) 패널이 열렸는지 확인. UI가 바뀌었으면 `read_page`로 결과 영역 구조를 보고 셀렉터를 조정한다.
 

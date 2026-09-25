@@ -6,7 +6,7 @@
 
 - **검색 모드가 안 잡힘 / "자동"으로만 실행됨**: 컴포저 제출 전에 **돋보기(검색) 아이콘**을 클릭해 하이라이트(흰 둥근 박스)가 생긴 것을 `zoom`으로 확인한 뒤 제출한다. "자동"으로도 검색형 질의는 검색으로 가지만, 결과 패널이 안 뜨면 검색 모드를 명시 선택해 다시 제출한다.
 
-- **`Runtime.evaluate timed out` (45초)**: `navigate`나 제출 클릭 **직후** 곧바로 `javascript_tool`을 부르면 렌더링과 충돌해 timeout이 난다. `navigate`/클릭과 `javascript_tool`을 **별개 호출로 분리**하고 사이에 짧은 텀(메시지 1~2회)을 둔다. `navigate`/클릭과 추출 JS를 한 `browser_batch`에 바로 잇지 말 것(추출 JS → `get_page_text` → 복구 JS를 묶는 반환 규약 batch는 해당 없음 — `references/extraction.md` 0장). 두 번 이상 retry해도 실패하면 그 카드는 건너뛴다. **JS 내부에 대기 루프(`for…sleep`)를 넣지 말 것.**
+- **`Runtime.evaluate timed out` (45초)**: `navigate`나 제출 클릭 **직후** 곧바로 `javascript_tool`을 부르면 렌더링과 충돌해 timeout이 난다. batch 안에서 이동·클릭 뒤에 `computer` `wait` 2~3초를 넣는 것이 기본이다(`references/extraction.md` 0장). 그래도 timeout이면 그 페이지만 이동/클릭과 추출을 별개 호출로 나누고 텀을 늘린다. 두 번 이상 retry해도 실패하면 그 카드는 건너뛴다. **JS 내부에 대기 루프를 넣지 말 것**(기다림은 `computer` `wait`로, JS 안의 짧은 대기는 최상위 `await`로 — async IIFE는 `{}`가 돌아온다).
 
 - **본문이 비어 보임 / `innerText`가 작음**: 개편 후 본문은 DOM에 정상 적재되므로 보통 비지 않는다. 적재 판정은 `innerText`가 아니라 **`references/extraction.md` 2장 (1)의 `recoveredLen`/`mainCount`/`judges`** 로 한다. 단락 추출은 `data-node-id="lbox-paragraph-main-*"` 셀렉터로 한다 — 페이지 전체를 `get_page_text`로 읽으면 2벌 렌더·사이드바가 섞인다(`get_page_text`는 반환 규약으로 내놓은 결과를 받을 때만 쓴다). **개편 전의 `<script>` 페이로드 복원은 쓰지 말 것** — 다른 사건 텍스트가 노이즈로 섞인다.
 
@@ -24,6 +24,6 @@
 
 - **`Tab not found`**: 탭이 닫혔거나 ID가 바뀌었다. `tabs_context_mcp`로 현재 탭 ID를 다시 확인하고 navigate한다.
 
-- **페이지네이션 번호가 안 보임**: 결과 리스트를 아래로 `scroll`하면 하단에 `1 2 3 4 5 … »` 가 나타난다. 컴포저 입력창이 리스트 하단을 가리면 조금 더 스크롤한 뒤 번호를 클릭한다.
+- **페이지 번호 JS가 `clicked:false`**: 번호 버튼은 처음에 1~5만 있다. 6페이지 이상이면 결과 리스트를 아래로 `scroll`해 `1 2 3 4 5 … »`를 노출시키고 `screenshot`으로 `»`·번호 위치를 확인해 클릭한다. 컴포저 입력창이 리스트 하단을 가리면 조금 더 스크롤한다.
 
 - **외부 도메인 링크**: 검색 결과·본문에서 lbox.kr 외 다른 도메인으로 가는 링크는 따라가지 않는다.

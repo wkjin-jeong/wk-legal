@@ -2,14 +2,16 @@
 
 SKILL.md 본문이 지시하는 시점에 해당 장만 읽는다. 모든 셀렉터·JS는 2026.6 개편판 라이브 검증본이다. lbox는 Next.js(App Router) 기반이며 본문은 서버 렌더되어 별도 API 없이 DOM에 들어온다.
 
-## 0. 반환 규약 — 큰 결과는 `get_page_text`로 받는다
+## 0. 반환·호출 규약 — 결과는 `get_page_text`로, 한 페이지는 batch 한 번에
 
 `javascript_tool`의 반환값은 약 1,000자에서 `[TRUNCATED]`로 잘린다(Claude Code·Cowork 실측). 카드 10건은 3~4천 자, 본문 머리부는 3천 자를 넘기 쉬워 그대로 반환하면 매번 잘린다. 그래서 이 문서의 추출 JS는 결과를 반환하지 않고 **페이지에 내놓는다**: `OUT()`이 body를 결과 텍스트만 담은 `<pre>`로 잠시 바꾸고 `OUT n자`만 반환하면, `get_page_text`가 그 텍스트를 잘림 없이 돌려준다.
 
-1. **한 번에 보낸다**: [추출 JS] → `get_page_text` → [복구 JS] 세 호출을 `browser_batch` 하나로 보낸다. 결과는 `get_page_text` 출력의 `Source element: <body>` 아래 JSON이다. batch 도구가 없으면 세 호출을 차례로 한다.
+1. **한 페이지는 batch 한 번에**: [`navigate`·클릭 → `computer` `wait` 2~3초 → 추출 JS → `get_page_text` → (같은 페이지의 다음 추출 JS → `get_page_text`) → 복구 JS]를 `browser_batch` 하나로 보낸다. 결과는 각 `get_page_text` 출력의 `Source element: <body>` 아래 JSON이다. batch 도구가 없으면 차례로 호출한다.
 2. **복구 JS**: `if (window.__origBody) { document.body = window.__origBody; window.__origBody = null; } 'restored'` — 떼어 둔 원래 body를 그대로 되돌리므로 페이지 상태·이벤트가 유지된다(2026-09-26 실측: lbox 작업 결과 패널·판례 본문, bigcase 검색 결과 — 복구 뒤 페이지 넘기기·사이드바 펼치기 정상). **복구 전에는 `computer` 클릭·`screenshot`을 하지 않는다**(빈 화면을 누르게 된다). 아래 JS는 모두 첫 줄에서 먼저 복구하므로, batch가 중간에 끊겨도 다음 JS가 되살린다.
 3. 한 번에 내놓는 양은 12,000자 안팎까지로 한다(컨텍스트 절약). 더 필요하면 범위를 옮겨 다시 내놓는다 — `window.__lboxCommentary`·`window.__lboxSection`에 저장해 둔 값에서 자르면 DOM을 다시 읽지 않아도 된다. 1,000자보다 확실히 작은 결과(탭 클릭 여부·건수 등)는 그대로 반환해도 된다.
 4. `get_page_text`에 JSON이 아니라 원래 페이지 글이 나오면 내놓기가 안 된 것이다 — 추출 JS의 반환값(`OUT n자`인지 오류인지)을 보고 다시 보낸다. 페이지 전체를 `get_page_text`로 읽어 본문을 얻으려 하지 않는다(사이드바·메뉴가 섞인다).
+5. **렌더 대기·재시도**: 이동·클릭 직후 곧바로 JS를 실행하면 렌더링과 충돌해 `Runtime.evaluate timed out`(45초)이 날 수 있어 batch 안에 `wait`를 먼저 둔다(2026-09-26 실측 — bigcase 판례 본문 2초, lbox 판례 본문 3초면 백그라운드 탭에서도 본문·사이드바까지 적재됐다). 추출 결과가 0건·빈값이면(렌더 미완) `wait` 3초 → 추출 묶음만 다시 보낸다(최대 3회 — lbox 작업(Task)의 결과 패널은 검색이 끝나야 채워지므로 최대 5회. 백그라운드 탭에서 작업 주소를 바로 열면 15초 넘게 걸린 실측이 있다). timeout이 나면 그 페이지만 이동과 추출을 따로 보낸다.
+6. **`await`는 최상위에서**: JS 안에서 기다려야 하면 async IIFE로 감싸지 말고 최상위 `await`를 쓴다 — async IIFE는 결과 대신 `{}`가 돌아온다(실측). 긴 대기는 JS 반복문이 아니라 `computer` `wait`로 한다.
 
 아래 JS는 모두 이 두 줄로 시작한다.
 
@@ -27,7 +29,7 @@ const OUT = s => { if (!window.__origBody) window.__origBody = document.body; co
 1. `navigate` → `https://lbox.kr/`.
 2. `computer` `screenshot`으로 컴포저 확인 → 입력창 클릭 → 검색어 `type` → **돋보기(검색) 아이콘** 클릭(흰 하이라이트 확인, 불확실하면 `zoom`) → **↑(제출)** 클릭.
 3. `/task/{id}`로 이동하고 결과 패널이 열린다(기본 **판례** 탭).
-4. 제출 클릭과 추출 `javascript_tool` 호출은 분리하고 짧은 텀을 둔다.
+4. 제출 클릭 뒤 추출은 같은 batch에서 `computer` `wait` 3초 뒤에 한다(0장).
 
 ### 1-2. "주석·실무서" 탭으로 전환 (패널 탭 ≠ 좌측 내비 링크)
 
@@ -44,7 +46,7 @@ const OUT = s => { if (!window.__origBody) window.__origBody = document.body; co
 })()
 ```
 
-클릭 후 짧은 텀을 두고 1-3의 카드 추출을 실행한다. (결과 0건이면 패널이 아직 로딩 중이거나 이 작업에 주석서 결과가 없을 수 있으니 한 번 더 확인.)
+[이 JS → `wait` 2초 → 1-3 카드 추출 → `get_page_text` → 복구]를 batch 하나로 보낸다(0장). (결과 0건이면 패널이 아직 로딩 중이거나 이 작업에 주석서 결과가 없을 수 있으니 한 번 더 확인.)
 
 ### 1-3. 카드 추출
 
@@ -97,7 +99,21 @@ const OUT = s => { if (!window.__origBody) window.__origBody = document.body; co
 
 ### 1-4. 페이지 순회 · 필터
 
-- 결과 리스트를 아래로 `scroll`하면 하단에 **번호 페이지네이션**(`1 2 3 …`)이 보인다. 번호를 클릭하고 1-3을 다시 실행한다(판례 검색과 동일).
+- 결과 리스트 하단에 **번호 페이지네이션**(`1 2 3 …`)이 있다. 번호 버튼(처음엔 1~5)은 위 JS로 누른다 — 스크롤·스크린샷이 필요 없다(2026-09-26 실측: 3을 누르자 21~30위로 갱신). `clicked:false`(6페이지 이상 등)면 결과 리스트를 `scroll`해 페이지네이션을 노출시키고 `screenshot`으로 위치를 확인해 `»`·번호를 클릭한다.
+
+```javascript
+// N = 갈 페이지 번호(문자열). 같은 batch에서 wait 2초 → 카드 추출 → get_page_text → 복구를 잇는다.
+(() => {
+  if (window.__origBody) { document.body = window.__origBody; window.__origBody = null; }   // 복구(0장)
+  const N = '2';
+  const pag = Array.from(document.querySelectorAll('button')).map(b => b.parentElement)
+    .find(p => p && ['1', N].every(n => Array.from(p.children).some(c => (c.textContent || '').trim() === n)));
+  const btn = pag && Array.from(pag.children).find(c => (c.textContent || '').trim() === N);
+  if (btn) btn.click();
+  return JSON.stringify({ clicked: !!btn });
+})()
+```
+
 - 법령·문서유형으로 좁히려면 주석·실무서 탭의 필터 칩(있으면)을 `screenshot`으로 확인해 `computer`로 조작하거나, 결과의 `bookMeta`·`breadcrumb`으로 선별한다(`references/filter-map.md`).
 
 ## 2. 본문 섹션 추출 (`/book/{bookId}` 뷰어)
@@ -114,7 +130,7 @@ https://lbox.kr/book/{bookId}?tocId={tocId}&nodeId={nodeId}&volumeHistoryId={vol
 >
 > **섹션이 클 수 있음**: `nodeId`가 "Ⅳ. 인신사고로 인한 손해액의 산정" 같은 **상위 장**을 가리키면 그 장 전체(수만 자)가 한 섹션이다. 전문을 다 받으면 컨텍스트를 낭비하므로 `window.__lboxSection`에 저장하고 **질의 키워드 인근만 발췌**해 내놓는다.
 
-navigate 후 짧은 텀을 두고 실행:
+[`navigate` → `wait` 3초 → 이 JS → `get_page_text` → 복구]를 batch 하나로 보낸다(0장):
 
 ```javascript
 (() => {

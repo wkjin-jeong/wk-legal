@@ -4,7 +4,7 @@
 
 - **검색 결과 0건 / 카드 0건**: ⓐ 상단 탭이 **판례**인지 확인한다(법령·논문 등 다른 탭이면 판례 탭 클릭). ⓑ 문서범위 칩이 "전문판례"인지 확인한다. ⓒ `q` 파라미터가 `encodeURIComponent`로 인코딩됐는지 확인한다. ⓓ 그래도 0건이면 검색어가 너무 길거나 구체적인 경우다 — 키워드를 짧게 줄여 새 `?q=` URL로 재진입한다.
 
-- **`Runtime.evaluate timed out` (45초)**: `navigate` **직후** 곧바로 `javascript_tool`을 부르면 렌더링과 충돌해 timeout이 난다. `navigate`와 `javascript_tool`을 **별개 호출로 분리**하고 사이에 짧은 텀을 둔다. 두 번 이상 retry해도 실패하면 그 판례는 건너뛴다. **JS 내부에 장시간 대기 루프를 넣지 말 것**(JS 첫머리의 1초 내외 `await delay`는 무방).
+- **`Runtime.evaluate timed out` (45초)**: `navigate` **직후** 곧바로 `javascript_tool`을 부르면 렌더링과 충돌해 timeout이 난다. batch 안에서 이동·클릭 뒤에 `computer` `wait` 2~3초를 넣는 것이 기본이다(`references/extraction.md` 0장). 그래도 timeout이면 그 페이지만 이동/클릭과 추출을 별개 호출로 나누고 텀을 늘린다. 두 번 이상 retry해도 실패하면 그 카드는 건너뛴다. **JS 내부에 대기 루프를 넣지 말 것**(기다림은 `computer` `wait`로, JS 안의 짧은 대기는 최상위 `await`로 — async IIFE는 `{}`가 돌아온다).
 
 - **결과가 `[BLOCKED: Cookie/query string data]`**: 반환값에 원시 `outerHTML`·`location.search`·전체 URL(쿼리스트링 포함)이 들어가면 차단된다(실측). URL은 **pathname만** 다루고(`new URL(href).pathname`), HTML 원문 대신 텍스트·구조화 필드만 반환한다. 쿠키·인증 토큰은 결과에 절대 포함하지 않는다.
 

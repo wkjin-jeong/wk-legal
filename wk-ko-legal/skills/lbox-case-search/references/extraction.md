@@ -2,14 +2,16 @@
 
 SKILL.md 본문이 지시하는 시점에 해당 장만 읽는다. 모든 셀렉터·JS는 2026.6 개편판 라이브 검증본이다. lbox는 Next.js(App Router) 기반이며, 본문은 서버 렌더되어 별도 검색/본문 API 호출 없이 DOM에 들어온다.
 
-## 0. 반환 규약 — 큰 결과는 `get_page_text`로 받는다
+## 0. 반환·호출 규약 — 결과는 `get_page_text`로, 한 페이지는 batch 한 번에
 
 `javascript_tool`의 반환값은 약 1,000자에서 `[TRUNCATED]`로 잘린다(Claude Code·Cowork 실측). 카드 10건은 3~4천 자, 본문 머리부는 3천 자를 넘기 쉬워 그대로 반환하면 매번 잘린다. 그래서 이 문서의 추출 JS는 결과를 반환하지 않고 **페이지에 내놓는다**: `OUT()`이 body를 결과 텍스트만 담은 `<pre>`로 잠시 바꾸고 `OUT n자`만 반환하면, `get_page_text`가 그 텍스트를 잘림 없이 돌려준다.
 
-1. **한 번에 보낸다**: [추출 JS] → `get_page_text` → [복구 JS] 세 호출을 `browser_batch` 하나로 보낸다. 결과는 `get_page_text` 출력의 `Source element: <body>` 아래 JSON이다. batch 도구가 없으면 세 호출을 차례로 한다.
+1. **한 페이지는 batch 한 번에**: [`navigate`·클릭 → `computer` `wait` 2~3초 → 추출 JS → `get_page_text` → (같은 페이지의 다음 추출 JS → `get_page_text`) → 복구 JS]를 `browser_batch` 하나로 보낸다. 결과는 각 `get_page_text` 출력의 `Source element: <body>` 아래 JSON이다. batch 도구가 없으면 차례로 호출한다.
 2. **복구 JS**: `if (window.__origBody) { document.body = window.__origBody; window.__origBody = null; } 'restored'` — 떼어 둔 원래 body를 그대로 되돌리므로 페이지 상태·이벤트가 유지된다(2026-09-26 실측: lbox 작업 결과 패널·판례 본문, bigcase 검색 결과 — 복구 뒤 페이지 넘기기·사이드바 펼치기 정상). **복구 전에는 `computer` 클릭·`screenshot`을 하지 않는다**(빈 화면을 누르게 된다). 아래 JS는 모두 첫 줄에서 먼저 복구하므로, batch가 중간에 끊겨도 다음 JS가 되살린다.
 3. 한 번에 내놓는 양은 12,000자 안팎까지로 한다(컨텍스트 절약). 더 필요하면 범위를 옮겨 다시 내놓는다 — `window.__lboxCards`·`window.__lboxMain`에 저장해 둔 값에서 자르면 DOM을 다시 읽지 않아도 된다. 1,000자보다 확실히 작은 결과(탭 클릭 여부·건수 등)는 그대로 반환해도 된다.
 4. `get_page_text`에 JSON이 아니라 원래 페이지 글이 나오면 내놓기가 안 된 것이다 — 추출 JS의 반환값(`OUT n자`인지 오류인지)을 보고 다시 보낸다. 페이지 전체를 `get_page_text`로 읽어 본문을 얻으려 하지 않는다(사이드바·메뉴가 섞인다).
+5. **렌더 대기·재시도**: 이동·클릭 직후 곧바로 JS를 실행하면 렌더링과 충돌해 `Runtime.evaluate timed out`(45초)이 날 수 있어 batch 안에 `wait`를 먼저 둔다(2026-09-26 실측 — bigcase 판례 본문 2초, lbox 판례 본문 3초면 백그라운드 탭에서도 본문·사이드바까지 적재됐다). 추출 결과가 0건·빈값이면(렌더 미완) `wait` 3초 → 추출 묶음만 다시 보낸다(최대 3회 — lbox 작업(Task)의 결과 패널은 검색이 끝나야 채워지므로 최대 5회. 백그라운드 탭에서 작업 주소를 바로 열면 15초 넘게 걸린 실측이 있다). timeout이 나면 그 페이지만 이동과 추출을 따로 보낸다.
+6. **`await`는 최상위에서**: JS 안에서 기다려야 하면 async IIFE로 감싸지 말고 최상위 `await`를 쓴다 — async IIFE는 결과 대신 `{}`가 돌아온다(실측). 긴 대기는 JS 반복문이 아니라 `computer` `wait`로 한다.
 
 아래 JS는 모두 이 두 줄로 시작한다.
 
@@ -30,7 +32,7 @@ const OUT = s => { if (!window.__origBody) window.__origBody = document.body; co
 4. **돋보기(검색) 아이콘**을 클릭한다. 선택되면 그 아이콘에 흰색 둥근 박스 하이라이트가 생긴다(불확실하면 `computer` `zoom`으로 아이콘 영역을 확대해 확인). "자동" 모드로도 검색형 질의는 검색으로 라우팅되지만, 결정적으로 하려면 **검색 모드를 명시 선택**한다.
 5. **↑(제출)** 을 클릭한다. `/task/{id}`로 이동하고 결과 패널이 열린다.
 
-> 좌표는 화면 크기마다 다르므로 매번 `screenshot`으로 확인한다. `find`("composer input", "submit button")로 ref를 잡아 `computer{ref}` 클릭해도 된다. 제출 클릭과 결과 추출 `javascript_tool` 호출은 **분리**하고 사이에 짧은 텀을 둔다(timeout 회피).
+> 좌표는 화면 크기마다 다르므로 매번 `screenshot`으로 확인한다. `find`("composer input", "submit button")로 ref를 잡아 `computer{ref}` 클릭해도 된다. 제출 클릭 뒤 결과 추출은 같은 batch에서 `computer` `wait` 3초 뒤에 한다(0장). 결과 패널은 검색이 끝나야 채워지므로 카드가 0건이면 `wait` 3초 → 추출 묶음만 다시(최대 5회).
 
 **결과 패널이 닫혀 있을 때**(작업을 다시 열었거나 패널을 접은 경우): timeline의 **"○○ 검색 결과 / 검색"** 카드를 클릭하면 패널이 다시 열린다. 패널이 열렸는지는 아래 카드 추출 JS의 `count > 0`으로 확인한다.
 
@@ -76,8 +78,21 @@ const OUT = s => { if (!window.__origBody) window.__origBody = document.body; co
 
 ### 1-3. 페이지 순회
 
-- 결과는 **10건/페이지**. 결과 리스트를 아래로 스크롤하면 하단에 **번호 페이지네이션(`1 2 3 4 5 … »`, 이전/다음 화살표)** 이 보인다.
-- 다음 페이지: `computer` `scroll`(결과 리스트 위, 예 `[화면중앙x, 550]`, down)로 페이지네이션을 노출시킨 뒤 원하는 번호 버튼을 클릭한다. 클릭하면 같은 패널이 다음 10건(rank 11~20 …)으로 갱신되므로 1-2의 카드 추출 JS를 다시 실행한다.
+- 결과는 **10건/페이지**, 결과 리스트 하단에 **번호 페이지네이션(`1 2 3 4 5 … »`, 이전/다음 화살표)** 이 있다. 번호를 누르면 같은 패널이 다음 10건(rank 11~20 …)으로 갱신된다.
+- 다음 페이지: 번호 버튼(처음엔 1~5)은 위 JS로 누른다 — 스크롤·스크린샷이 필요 없다(2026-09-26 실측: 3을 누르자 21~30위로 갱신). `clicked:false`(6페이지 이상 등)면 결과 리스트를 `scroll`해 페이지네이션을 노출시키고 `screenshot`으로 위치를 확인해 `»`·번호를 클릭한다.
+
+```javascript
+// N = 갈 페이지 번호(문자열). 같은 batch에서 wait 2초 → 카드 추출 → get_page_text → 복구를 잇는다.
+(() => {
+  if (window.__origBody) { document.body = window.__origBody; window.__origBody = null; }   // 복구(0장)
+  const N = '2';
+  const pag = Array.from(document.querySelectorAll('button')).map(b => b.parentElement)
+    .find(p => p && ['1', N].every(n => Array.from(p.children).some(c => (c.textContent || '').trim() === n)));
+  const btn = pag && Array.from(pag.children).find(c => (c.textContent || '').trim() === N);
+  if (btn) btn.click();
+  return JSON.stringify({ clicked: !!btn });
+})()
+```
 - 페이지 간 누적은 각 페이지에서 받은 `items`를 대화 안에서 모아 수행한다(`window.__lboxCards`는 페이지 이동 시 갱신됨).
 
 ### 1-4. 필터 적용 (선택)
@@ -107,7 +122,7 @@ const OUT = s => { if (!window.__origBody) window.__origBody = document.body; co
 | `main-*` | **본문**(주문·이유·의견). 전원합의체는 다수/반대/별개/보충의견 포함 |
 | `judges-*` | 재판부(대법관·판사) |
 
-**(1) 머리부 + 구조 추출** — navigate 후 짧은 텀을 두고 실행:
+**(1) 머리부 + 구조 추출** — [`navigate` → `wait` 3초 → 이 JS → `get_page_text` → (3-a) JS → `get_page_text` → 복구]를 batch 하나로 보낸다(0장):
 
 ```javascript
 (() => {
