@@ -66,6 +66,8 @@ def build(root: Path) -> None:
     ])
     record(b / "내역서", [(1, "공사비 내역서", "| 항목 | 금액 |\n|---|---|\n| 자재비 | 100 |\n| 인건비 | 200 |\n"
                                         "| 경비 | 300 |\n|  | 600 |")])
+    record(b / "정산표", [(1, "정산표", "| 항목 | 수량 | 금액 |\n|---|---|---|\n| 자재 | 1 | 100 |\n| 운반 | 2 | 200 |"),
+                         (2, "정산표", "| 항목 | 수량 | 금액 |\n|---|---|---|\n| 설치 | 3 | 300 |\n| 합계 | 6 | 600 |")])
     record(b / "가림", [(1, "사실확인서", "작성자 [이름가림 홍길동 010-1234-5678]은 다음과 같이 확인합니다.")])
     record(b / "규격밖", [(1, "진술서", "front-matter가 없는 쪽")], front_matter=False)
     record(b / "BOM", [(1, "진술서", "BOM이 붙은 쪽 파일")], bom=True)
@@ -103,10 +105,10 @@ def main() -> int:
               so[:200])
 
         # 색인
-        rc, so, _ = run(root, "index", *A, *O, "변환본/계약서", "변환본/내역서", "변환본/본권", "변환본/별권1")
+        rc, so, _ = run(root, "index", *A, *O, "변환본/계약서", "변환본/내역서", "변환본/본권", "변환본/별권1", "변환본/정산표")
         tot = json.loads(so.strip().splitlines()[-1]).get("색인_전체", {})
-        check("index: 합성 record 4건", rc == 0)
-        check("S5 index: 약식 판정용 색인_전체(record·쪽·글자수)", tot.get("record") == 4 and tot.get("쪽") == 10
+        check("index: 합성 record 5건", rc == 0)
+        check("S5 index: 약식 판정용 색인_전체(record·쪽·글자수)", tot.get("record") == 5 and tot.get("쪽") == 12
               and tot.get("글자수", 0) > 0, so)
 
         # E2 — sum
@@ -117,6 +119,16 @@ def main() -> int:
         rc, so, _ = run(root, "sum", *A, "--record", "변환본/내역서", "--pages", "1", "--col", "금액")
         s = json.loads(so)
         check("E2 sum: 라벨 없는 말미 합계 행은 뺌", s["합계"] == 600 and s["건수"] == 3 and s.get("말미행_합계추정") == 1, so)
+
+        # 비용 3.2-7 — sum: 열·범위 여러 개를 한 번에
+        rc, so, _ = run(root, "sum", *A, "--record", "변환본/정산표", "--pages", "1,2", "--col", "수량", "--col", "금액", "--check")
+        s = json.loads(so)
+        cols = [(x["합계"], x["건수"], x.get("소계_불일치")) for x in s.get("열별", [])]
+        check("sum: --col 반복·--pages 여러 범위를 열마다 합산", rc == 0 and cols == [(6, 3, []), (600, 3, [])], so)
+        rc, so, _ = run(root, "sum", *A, "--record", "변환본/정산표", "--pages", "2", "--col", "금액")
+        check("sum: 열 하나면 기존 출력 형식", rc == 0 and json.loads(so).get("합계") == 300, so)
+        rc, _, se = run(root, "sum", *A, "--record", "변환본/정산표", "--pages", "1")
+        check("sum: 열 인자가 없으면 트레이스백 대신 사용 오류", rc == 2 and "Traceback" not in se, se)
 
         # E3 — verify
         card = out / "_작업" / "카드" / "계약서" / "1-3.md"
@@ -220,8 +232,28 @@ def main() -> int:
         rc, so, _ = run(root, "coverage", *O, "--no-write")
         check("S4 cardfill --resha: 원문을 다시 확인한 카드의 sha 갱신 → 원문 변경 1건 해소",
               sha_before not in fm(c1) and json.loads(so)["누락·변경"] == n_stale - 1, so)
-        for c in (c1, c2, c3):
-            c.unlink()
+        # 비용 3.2-5 — derive: 타임라인·인물을 그대로 쓰고 손본 파일은 보존
+        c4 = write_card("계약서", "1-3", "## 색인\n- 일시: 2024-03-01 | 2024. 3. 1. | 계약 체결 {{p:1}}\n"
+                                          "- 인물: 홍길동 | 매수인 | 서명 {{p:2}}\n- 인물: 김철수 | 매도인 | 서명 {{p:2}}\n"
+                                          "- 주의메모 후보: 잔금일 기재 없음 {{p:3}}")
+        run(root, "cardfill", *A, *O, str(c4))
+        rc, so, _ = run(root, "derive", *O)
+        tl, pp = out / "타임라인.md", out / "인물.md"
+        ok = rc == 0 and tl.exists() and pp.exists() and "생성: derive" in tl.read_text(encoding="utf-8")
+        rows = [x for x in pp.read_text(encoding="utf-8").splitlines() if x.startswith("| ") and "원문 표기" not in x]
+        check("derive: 타임라인.md·인물.md를 front-matter까지 바로 작성, 인물은 이름순",
+              ok and [r.split("|")[1].strip() for r in rows] == ["김철수", "홍길동"] and "{{p:계약서#1}}" in tl.read_text(encoding="utf-8"), so)
+        rc, so, _ = run(root, "verify", *A, *O, str(tl), str(pp))
+        check("derive: 작성한 파일의 좌표가 verify 통과", rc == 0, so)
+        tl.write_text("---\n산출스킬: ko-evidence-analysis\n층: 1\n---\n| 손본 타임라인 |\n", encoding="utf-8")
+        rc, so, _ = run(root, "derive", *O)
+        check("derive: 손본 파일(생성: derive 없음)은 덮어쓰지 않고 _작업/*_초안.md에",
+              "손본 타임라인" in tl.read_text(encoding="utf-8") and (out / "_작업" / "타임라인_초안.md").exists()
+              and "타임라인.md" in json.loads(so)["보존(초안은 _작업/)"], so)
+        for c in (c1, c2, c3, c4):
+            c.unlink(missing_ok=True)
+        for x in (tl, pp):
+            x.unlink()
 
         # E1 — import 제자리 --replace 거부, 외부 원천 재반입은 교체
         rc, _, se = run(root, "import", *A, *O, "--src", str(root / "변환본" / "계약서"), "--dest", "변환본", "--replace")

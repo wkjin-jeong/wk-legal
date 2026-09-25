@@ -959,12 +959,31 @@ def cmd_derive(a) -> int:
             elif "주의메모 후보:" in line:
                 memos.append(tagfix(line.strip().lstrip("- ")))
     esc = lambda t: t.replace("|", "\\|")
-    rows = "".join(f"| {d} | {esc(o)} | {esc(t)} | {esc(k)} |\n" for d, o, t, k in sorted(times))
-    write_atomic(work(out) / "타임라인_초안.md", "| 일시 | 원문 표현 | 사실·좌표 | 출처 문건 종류 |\n|---|---|---|---|\n" + rows)
-    write_atomic(work(out) / "인물_초안.md", "".join(f"- [{r}] {t}\n" for r, t in sorted(people)))
+    timeline = "| 일시 | 원문 표현 | 사실·좌표 | 출처 문건 종류 |\n|---|---|---|---|\n" + "".join(
+        f"| {d} | {esc(o)} | {esc(t)} | {esc(k)} |\n" for d, o, t, k in sorted(times))
+    prow = []
+    for r, t in people:  # 인물은 병합하지 않고 이름(원문 표기)순으로 모은다
+        c = [x.strip() for x in t.split("|")]
+        prow.append((c[0], " · ".join(x for x in c[1:] if x), r))
+    persons = "| 인물(원문 표기) | 지위·설명·좌표 | 출처 |\n|---|---|---|\n" + "".join(
+        f"| {esc(n)} | {esc(d)} | {esc(r)} |\n" for n, d, r in sorted(prow))
+    carded = {card_rid(out, f) for f in (work(out) / "카드").rglob("*.md")}
+    n_pages = sum(1 for r in read_jsonl(work(out) / "색인.jsonl") if r["record_id"] in carded)
+    written, kept = [], []
+    for name, body in (("타임라인.md", timeline), ("인물.md", persons)):
+        dest = out / name
+        if dest.exists() and not split_front(dest.read_text(encoding="utf-8"))[0].get("생성", "").startswith("derive"):
+            write_atomic(work(out) / name.replace(".md", "_초안.md"), body)  # 사람이 손본 파일은 덮어쓰지 않는다
+            kept.append(name)
+            continue
+        fm = {"산출스킬": "ko-evidence-analysis", "층": 1, "기준일": datetime.date.today().isoformat(),
+              "입력": {"record": len(carded), "쪽": n_pages}, "생성": "derive — 카드 색인 절의 기계 수집(원문 재확인·병합 없음)",
+              "미해결표식": {k.strip("[]"): v for k, v in open_marks(body).items()}}
+        write_atomic(dest, "---\n" + "".join(f"{k}: {flow(v)}\n" for k, v in fm.items()) + "---\n" + body)
+        written.append(name)
     write_atomic(work(out) / "주의메모_후보.md", "".join(f"- {t}\n" for t in memos))
     print(json.dumps({"일시": len(times), "형식_밖_일시": loose, "인물": len(people), "주의메모_후보": len(memos),
-                      "출력": "_작업/타임라인_초안.md · 인물_초안.md · 주의메모_후보.md"}, ensure_ascii=False))
+                      "작성": written, "보존(초안은 _작업/)": kept, "후보": "_작업/주의메모_후보.md"}, ensure_ascii=False))
     return 0
 
 
@@ -1029,6 +1048,16 @@ def in_order(parts: list[str], hay: str) -> bool:
 
 OPEN_MARKS = ["원본 PDF 확인 필요", "면수 확인 필요", "변호사 확정 필요", "행 좌표 필요", "프레임 필요", "확인 필요",
               "[판례 미확인]", "[법령 미확인]", "[불명확", "[판독불가", "[마스킹]"]
+def open_marks(body: str) -> dict:
+    """미해결 표식의 종류별 개수(긴 표식부터 세고 지워 '확인 필요'의 중복 집계를 막는다)."""
+    body, got = body.replace("미완성 — 확인 필요 사항 있음", ""), {}
+    for mk in OPEN_MARKS:
+        if n := body.count(mk):
+            got[mk] = n
+        body = body.replace(mk, "")
+    return got
+
+
 QUOTE_RE = re.compile(r"(?:[\"“]([^\"“”\n]{2,})[\"”]|「([^」\n]{2,})」)\s*\{\{p:([^}]+)\}\}")  # 「」는 원문에 큰따옴표가 든 구절용
 
 
@@ -1130,21 +1159,18 @@ def resolve_record(root: Path, record: str, out: str | None) -> Path:
     return rec
 
 
-def cmd_sum(a) -> int:
-    root = Path(a.root)
-    rec = resolve_record(root, a.record, a.out)
-    lo, hi = parse_range(a.pages)
+def sum_col(rec: Path, ranges: list[tuple[int, int]], col: str | None, col_index: int | None, check: bool,
+            by: str | None) -> tuple[dict, dict]:
+    """한 열의 합계·건수(소계·합계 행 제외, 표식 셀 분리). (결과, --by 집계)"""
     total, n, uncertain, excluded, bad, groups, used, warn, seg, mid, mism = 0.0, 0, [], 0, [], {}, set(), [], 0.0, 0.0, []
     guessed = 0
-    if a.by and not a.report:
-        die("--by는 --report와 함께 쓴다(집계 키에 인명이 들 수 있어 터미널에 출력하지 않는다)")
-    want = re.sub(r"\s+", "", a.col) if a.col else None
+    want = re.sub(r"\s+", "", col) if col else None
     for pn, p in page_files(rec):
-        if not lo <= pn <= hi:
+        if not any(lo <= pn <= hi for lo, hi in ranges):
             continue
         for head, rows in tables(read_page(p)[1]):
-            if a.col_index:
-                ci = a.col_index - 1
+            if col_index:
+                ci = col_index - 1
                 if ci >= len(head):
                     continue
             else:
@@ -1153,11 +1179,11 @@ def cmd_sum(a) -> int:
                 if not hits:
                     continue
                 if len(exact) != 1 and len(hits) > 1:
-                    msg = f"'{a.col}'에 맞는 열이 여럿 — 첫 열을 읽음(--col-index로 지정)"
+                    msg = f"'{col}'에 맞는 열이 여럿 — 첫 열을 읽음(--col-index로 지정)"
                     warn.append(msg) if msg not in warn else None
                 ci = (exact or hits)[0]
             used.add(f"{ci + 1}:{head[ci]}")
-            bi = find_col(head, re.sub(r"\s+", "", a.by)) if a.by else None
+            bi = find_col(head, re.sub(r"\s+", "", by)) if by else None
             if any(len(r) != len(head) for r in rows):
                 warn.append(f"{pn}쪽: 머리글 {len(head)}열과 칸 수가 다른 행이 있음")
             last, tsum, tn = None, 0.0, 0
@@ -1167,7 +1193,7 @@ def cmd_sum(a) -> int:
                     excluded += 1
                     v = to_number(cell)
                     lab = " ".join(r)
-                    if a.check and v is not None:  # 계층 소계: 직전 구간·중간 누적·전체 가운데 하나와 맞으면 통과
+                    if check and v is not None:  # 계층 소계: 직전 구간·중간 누적·전체 가운데 하나와 맞으면 통과
                         if abs(mid - v) <= 0.5:
                             mid = 0.0
                         elif not any(abs(x - v) <= 0.5 for x in (seg, total)):
@@ -1197,16 +1223,33 @@ def cmd_sum(a) -> int:
                     groups[last[4]]["건수"] -= 1
                 warn.append(f"{last[0]}쪽 {last[1]}행: 라벨 없는 말미 행이 위 행들의 합과 같아 합계 행으로 보고 제외함")
     if not used:
-        die("대상 열을 가진 표가 없음 — --col 철자 또는 --col-index 확인")
-    if a.by:
-        write_atomic(Path(a.report), json.dumps(dict(sorted(groups.items(), key=lambda kv: -kv[1]["합계"])),
-                                                ensure_ascii=False, indent=2) + "\n")
+        die(f"대상 열을 가진 표가 없음 — --col 철자 또는 --col-index 확인({col or col_index})")
     res = {"읽은열": sorted(used), "합계": int(total) if total == int(total) else total, "건수": n,
            "소계·합계행_제외": excluded, "말미행_합계추정": guessed, "표식셀_pdf쪽(합산 제외)": uncertain, "숫자아님(합산 제외)": bad, "경고": warn}
-    if a.check:
+    if check:
         res["소계_불일치"] = mism
-    print(json.dumps(res, ensure_ascii=False))
-    return 3 if uncertain or mism else 0
+    return res, dict(sorted(groups.items(), key=lambda kv: -kv[1]["합계"]))
+
+
+def cmd_sum(a) -> int:
+    """열 여러 개(--col 반복)·쪽 범위 여러 개(--pages 45-47,60-62)를 한 번에 — 열마다 따로 합산한다."""
+    rec = resolve_record(Path(a.root), a.record, a.out)
+    ranges = [parse_range(x) for x in a.pages.split(",") if x.strip()]
+    if a.by and not a.report:
+        die("--by는 --report와 함께 쓴다(집계 키에 인명이 들 수 있어 터미널에 출력하지 않는다)")
+    if not a.col and not a.col_index:
+        die("--col 또는 --col-index 지정")
+    specs = [(None, a.col_index)] if a.col_index else [(c, None) for c in a.col]
+    results, reports = [], {}
+    for col, cidx in specs:
+        res, groups = sum_col(rec, ranges, col, cidx, a.check, a.by)
+        results.append(res)
+        reports[col or f"{cidx}열"] = groups
+    if a.by:
+        write_atomic(Path(a.report), json.dumps(next(iter(reports.values())) if len(reports) == 1 else reports,
+                                                ensure_ascii=False, indent=2) + "\n")
+    print(json.dumps(results[0] if len(results) == 1 else {"열별": results}, ensure_ascii=False))
+    return 3 if any(r["표식셀_pdf쪽(합산 제외)"] or r.get("소계_불일치") for r in results) else 0
 
 
 # ── main ───────────────────────────────────────────────────────────────
@@ -1256,7 +1299,7 @@ def main() -> None:
     p = add("cardfill", cmd_cardfill, "카드 front-matter의 기계 필드(record_id·pdf·출처sha256·좌표·증거ID·표식) 채움", out=True)
     p.add_argument("--resha", action="store_true", help="출처sha256도 현재 원문으로 다시 계산(원문을 다시 확인한 카드에만)")
     p.add_argument("files", nargs="*", help="카드 경로. 생략하면 분석 폴더의 전 카드")
-    add("derive", cmd_derive, "카드의 색인 절·주의메모 후보를 모아 파생물 초안 생성(_작업/)", root=False, out=True)
+    add("derive", cmd_derive, "카드의 색인 절에서 타임라인.md·인물.md 작성(손본 파일은 보존)과 주의메모 후보 수집", root=False, out=True)
     p = add("profile", cmd_profile, "대화 내보내기 출력물 프로필(일자·발신자별 건수·공백·키워드 위치)")
     p.add_argument("--record", required=True)
     p.add_argument("--pages", required=True)
@@ -1268,8 +1311,8 @@ def main() -> None:
     p.add_argument("files", nargs="*", help="생략하면 분석 폴더의 전 카드와 산출물")
     p = add("sum", cmd_sum, "표 열 합산(소계·합계 행 제외, 표식 셀 분리 보고)")
     p.add_argument("--record", required=True)
-    p.add_argument("--pages", required=True)
-    p.add_argument("--col", help="열 머리글(완전일치 우선, 없으면 부분일치)")
+    p.add_argument("--pages", required=True, help="pdf쪽 범위 — 여러 개는 쉼표(45-47,60-62)")
+    p.add_argument("--col", action="append", help="열 머리글(완전일치 우선, 없으면 부분일치) — 반복하면 열마다 따로 합산")
     p.add_argument("--col-index", type=int, help="열 번호(1부터) — 다단 머리글·동명 열에서 --col 대신")
     p.add_argument("--check", action="store_true", help="소계·합계 행의 기재값을 행 합과 대조")
     p.add_argument("--out", help="분석 폴더 — 주면 --record에 증거번호(갑7)를 쓸 수 있다")
