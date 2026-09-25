@@ -29,7 +29,7 @@ OLD_NAMES = ("korean-civil-litigation-drafting", "korean-legal-advisory-drafting
              "korean-legal-writing-plan", "korean-law-api")
 ALLOWED_OLD = {"law_api.py", ".env.example"}  # 런타임 호환용 구명칭 허용 파일
 EXCLUDE_DIR = {"evals", "__pycache__"}
-EXCLUDE_FILE = {".DS_Store", ".env"}  # .env는 실제 인증키 — 배포 zip에 포함 금지
+EXCLUDE_FILE = {".DS_Store", ".env", ".law_api.env"}  # 실제 인증키 파일 — 배포 zip에 포함 금지
 # shared/ 참조 패턴: "shared/<파일>.md" 또는 "../../shared/<파일>.md" (코드펜스·따옴표 무관)
 SHARED_REF = re.compile(r"(?:\.\./\.\./)?shared/([\w가-힣.\-]+\.md)")
 

@@ -29,36 +29,31 @@ description: 대한민국 법령(법률·시행령·시행규칙)·행정규칙(
 
 ---
 
-## 2. 사전 준비 — 인증키(OC) 확인
+## 2. 사전 준비 — 실행 위치와 인증키(OC)
 
-본 API는 호출 시 OC(이메일 ID 형식, open.law.go.kr에서 발급) 파라미터가 필수.
-스크립트는 다음 우선순위로 OC를 자동으로 찾는다.
+### 2.1 실행 위치
 
-| 우선순위 | 출처 | 설정 방법 |
+- 명령의 `scripts/law_api.py`는 이 스킬 폴더 기준 경로다. 항상 `python3`로 실행한다(`python`이 없는 환경이 있다).
+- **작업(출력) 폴더에서 절대경로로 실행**하고 스킬 설치 폴더로 `cd`하지 않는다 — 키 파일 탐색과 저장 파일(`--save-to`, `download`)이 현재 폴더 기준이다.
+- 스킬 기준 경로가 셸에서 보이지 않으면(Cowork 등 샌드박스 VM — 기준 경로는 호스트 경로이고 셸은 VM이며, 플러그인은 VM의 `$HOME` 아래에 마운트된다) 첫 명령에서 찾아, 출력된 절대경로를 이후 명령에 그대로 쓴다(셸 변수는 호출 사이에 유지되지 않을 수 있다):
+
+```bash
+S=$(find "$HOME" -maxdepth 8 -path '*/ko-law-api/scripts/law_api.py' 2>/dev/null | head -1); echo "$S"; python3 "$S" get --target eflaw --lm "민법" --jo 390
+```
+
+### 2.2 인증키(OC)
+
+API 호출에는 OC(open.law.go.kr에서 발급한 ID)가 필수다. 스크립트가 다음 순서로 찾는다.
+
+| 순위 | 출처 | 비고 |
 |---|---|---|
-| 1 | `--oc` CLI 인자 | `python3 scripts/law_api.py --oc <id> search ...` |
-| 2 | `LAW_GO_KR_OC` 환경변수 | `export LAW_GO_KR_OC=<id>` (셸 프로파일에 등록 권장) |
-| 3 | **`.env` 파일 자동 로드** | 아래 탐색 경로 중 한 곳에 `LAW_GO_KR_OC=<id>` 한 줄 |
+| 1 | `--oc` 인자 | 최후 수단 — 명령 기록에 키가 남는다(스크립트가 경고) |
+| 2 | 환경변수 `LAW_GO_KR_OC` | 셸 프로파일에 이미 등록된 경우 |
+| 3 | **키 파일 자동 탐색 (권장)** | `LAW_GO_KR_OC=<id>` 한 줄. `$LAW_API_DOTENV` → 현재 폴더부터 상위로 올라가며 `.law_api.env` → `./.env` → 스킬 폴더 `.env` → `~/.law_api.env` → `~/.config/korean-law-api/.env` 순. `LAW_GO_KR_OC`가 없는 파일은 건너뛴다 |
 
-### `.env` 자동 탐색 경로 (첫 발견 후 멈춤)
-
-1. 환경변수 `LAW_API_DOTENV`로 직접 지정한 경로
-2. 현재 작업 디렉터리(`./.env`)
-3. 스크립트 폴더(`scripts/`)와 그 부모(=skill 폴더)의 `.env`
-4. `~/.law_api.env`
-5. `~/.config/korean-law-api/.env`
-
-### `.env` 파일 형식
-
-```
-# 주석 가능
-LAW_GO_KR_OC=your_id              # 인라인 주석도 OK (따옴표 없는 경우 ' #' 이후 잘림)
-export LAW_GO_KR_OC="your_id"     # export 키워드, 큰/작은 따옴표 모두 허용
-```
-
-skill 폴더에 `.env.example`이 동봉되어 있으니, `cp .env.example .env`로 복사 후 값을 채워넣고 `chmod 600 .env`로 권한을 좁혀 사용한다.
-이미 설정된 환경변수는 `.env`가 덮어쓰지 않는다(환경변수 우선 유지).
-환경변수도 인자도 `.env`도 모두 없으면 스크립트는 친절한 안내 메시지와 함께 종료한다 — 임의의 더미 값으로 호출을 시도하지 않는다.
+- **Cowork 등 샌드박스 VM에는 `~/.config`가 없다.** 마운트된 작업 폴더 최상위(예: 진행사건 폴더)에 `.law_api.env`를 한 번 두면 그 아래 어느 폴더에서 실행해도 찾는다. 스킬 설치 폴더는 읽기 전용이고 업데이트 때 바뀌므로 키를 두지 않는다.
+- **키 값을 `--oc`, `LAW_GO_KR_OC=… python3 …`, `export`, `cat`, `echo`로 드러내지 않는다** — 세션 기록에 평문으로 남는다. 키 파일을 못 찾으면 스크립트가 배치 위치를 안내하며 종료하므로, 그 안내를 사용자에게 전하고 임의 값으로 호출하지 않는다.
+- 파일 형식은 `.env.example` 참조(`LAW_GO_KR_OC=your_id`, `export`·따옴표·`#` 주석 허용). 권한은 `chmod 600`.
 
 ---
 
@@ -73,94 +68,65 @@ skill 폴더에 `.env.example`이 동봉되어 있으니, `cp .env.example .env`
 
 | target | 의미 | 검색 결과 식별자 필드 | 본문 조회 시 보낼 파라미터 |
 |---|---|---|---|
-| `law` | 법령(법률·시행령·시행규칙) | `<법령일련번호>` (예: 284415) | `--mst <법령일련번호>` |
-| `admrul` | 행정규칙(고시·훈령·예규·감독규정) | `<행정규칙일련번호>` (예: 2100000274812) | `--id <행정규칙일련번호>` |
-| `ordin` | 자치법규(조례·규칙) | `<자치법규일련번호>` (예: 2124537) | `--mst <자치법규일련번호>` ⚠ |
+| `law` | 법령 — **공포일 기준** 본문(미시행 조문 포함 가능 → 스크립트가 감지 시 시행본으로 대체) | `<법령일련번호>`(버전) / `<법령ID>` | `--mst` / `--id` / `--lm` |
+| `admrul` | 행정규칙(고시·훈령·예규·감독규정) | `<행정규칙일련번호>`(긴 숫자, 버전) / `<행정규칙ID>`(계통) | `--id <행정규칙일련번호>` |
+| `ordin` | 자치법규(조례·규칙) | `<자치법규일련번호>`(버전) / `<자치법규ID>`(계통) | `--mst <자치법규일련번호>` ⚠ |
 | `licbyl` | 법령 별표·서식 | (응답의 다운로드 URL) | 검색 전용 — `download` 명령 사용 |
 | `admbyl` | 행정규칙 별표·서식 | (응답의 다운로드 URL) | 검색 전용 — `download` 명령 사용 |
 | `ordinbyl` | 자치법규 별표·서식 | (응답의 다운로드 URL) | 검색 전용 — `download` 명령 사용 |
 | `expc` | 법령해석례 (법제처 유권해석) | `<법령해석례일련번호>` (예: 332741) | `--id <법령해석례일련번호>` |
-| `eflaw` | 현행법령(시행일) — 연혁 포함 시점별 버전 | `<법령일련번호>` (버전별 MST) | `--mst <버전MST> --efyd <그 버전 시행일자>` ⚠ ID 금지 |
+| `eflaw` | 법령 — **시행일 기준** 본문(현행 인용의 정공법) | `<법령ID>` / `<법령일련번호>`(버전) | 현행: `--lm <정식명>` 또는 `--id <법령ID>` / 과거 버전: `--mst <버전MST> --efyd <시행일자>` |
 | `admrulOldAndNew` | 행정규칙 신구법비교 (체인 역추적의 관문) | `<행정규칙일련번호>` | `--id <행정규칙일련번호>` |
 
 > 자치법규(`ordin`)는 본문 조회 시 **`--mst`(=MST=)** 를 쓴다. 행정규칙과 다르므로 주의.
-> 행정규칙은 짧은 `<행정규칙ID>`(예: 21828)가 아니라 긴 `<행정규칙일련번호>`(예: 2100000274812)를 `--id`에 넣는다.
+> 행정규칙 본문은 짧은 `<행정규칙ID>`(예: 21828 — 버전과 무관한 계통 번호)가 아니라 긴 `<행정규칙일련번호>`를 `--id`에 넣는다.
 
 응답 포맷은 `type=XML`(기본) / `JSON` / `HTML` 중 선택. 본 skill은 **XML을 기본**으로 사용한다.
 파라미터·필드 상세는 `references/api_reference.md` 참조.
 
 ---
 
-## 4. 표준 사용 흐름 (검색 → 식별자 확정 → 본문 조회)
+## 4. 표준 사용 흐름 — 현행 조문
 
-법령을 인용하기 위한 흐름은 항상 다음 2단계를 따른다.
+현행 조문은 **시행일 기준 본문(`target=eflaw`)**으로 인용한다. `target=law` 본문은 공포일 기준이라, 공포됐지만 아직 시행되지 않은 개정이 있으면 검색 결과는 '현행'인데 본문에는 미시행 조문이 섞인다(전자금융거래법 2026-09 실측). 스크립트는 `get --target law`에서 이를 감지하면 stderr에 ⚠를 남기고 시행본으로 바꿔 출력한다(공포본이 필요할 때만 `--promulgated`).
 
-### 단계 ① 목록 검색으로 식별자(MST/ID) 확정
-
-법령명 일부를 검색어로 보내 후보 목록을 받고, **시행일이 가장 최신인 현행 법령**을 고른다.
+### ① 정식 법령명을 알 때 — 1회 호출
 
 ```bash
-python scripts/law_api.py search --target law --query "민법" --display 5
+python3 scripts/law_api.py get --target eflaw --lm "민법" --jo 390
 ```
 
-응답에서 `MST`(법령), `ID`(행정규칙·자치법규), `시행일자`, `법령명한글`을 확인한다.
+`--lm`은 정식 명칭만 받는다(띄어쓰기 무관). 약칭('자본시장법')·오기는 "조회 결과 없음"(exit 2)이 나오므로 ②로 간다.
 
-#### `--display` 기본값 (target별 차등)
-
-`--display`를 명시하지 않으면 target에 따라 다음 기본값이 적용된다(API max=100).
-
-| target | 기본값 | 근거 |
-|---|---|---|
-| `law`, `admrul`, `expc` | **20** | 명확한 명칭으로 검색하면 결과가 한 자릿수~수십 건이라 충분 |
-| `ordin`, `licbyl`, `admbyl`, `ordinbyl` | **50** | 같은 분야 조례·별표가 수백~수만 건 잡혀 첫 페이지를 넓게 봐야 의도한 항목을 찾을 수 있음 |
-
-기본값으로도 부족하면 `--display 100 --page <N>`으로 페이지네이션. 응답의 `<totalCnt>`가 현재 페이지보다 크면 다음 페이지를 더 받아야 한다.
-
-### 단계 ② 본문/조문 조회로 인용할 텍스트 확보
+### ② 명칭이 불확실할 때 — 검색으로 법령ID 확보
 
 ```bash
-# 법령 전체 본문 (검색 결과의 <법령일련번호>를 --mst에)
-python scripts/law_api.py get --target law --mst 284415
-
-# 법령의 특정 조문만 (예: 민법 제390조)
-python scripts/law_api.py get --target law --mst 284415 --jo 390
-
-# 행정규칙 본문 (검색 결과의 <행정규칙일련번호>를 --id에)
-python scripts/law_api.py get --target admrul --id 2100000274812
-
-# 자치법규 본문 (검색 결과의 <자치법규일련번호>를 --mst에)
-python scripts/law_api.py get --target ordin --mst 2124537
+python3 scripts/law_api.py search --target law --query "전자금융거래법" --display 5
+python3 scripts/law_api.py get --target eflaw --id <법령ID> --jo 9
 ```
 
-조문번호(`JO`) 인코딩 규칙: **6자리 0-padding** (예: 제2조 → `000200`, 제390조 → `039000`). **가지조는 '제390조의2'처럼 그대로 입력**하면 조 4자리 + 가지조 2자리(`039002`)로 자동 인코딩된다.
-일부 응답은 4자리 padding을 요구하는데, **JO 지정 결과가 비면 스크립트가 대체 인코딩(예: `039000`→`0390`)으로 1회 자동 재시도**한다(재시도 시 stderr 알림). 그래도 못 찾으면 JO 없이 전체 본문을 받아 발췌한다.
-정확한 조문번호 인코딩은 `references/api_reference.md`의 "조문번호 인코딩" 섹션 참조.
+검색 결과의 `법령명한글`로 법률·시행령·시행규칙을 구분하고 `법령ID`를 쓴다(`법령일련번호`는 버전 번호). 부분일치 검색이라 '민법'에 난민법이 먼저 나올 수 있다.
 
-### 결과 가공
+`--display`를 생략하면 law·admrul·expc 20건, ordin·licbyl·admbyl·ordinbyl 50건이 기본이다(최대 100). `<totalCnt>`가 더 크면 `--page`로 넘긴다.
 
-응답이 XML이면 target별로 다음과 같은 구조에서 핵심 필드를 발췌한다.
+### ③ 행정규칙·자치법규
 
-- **법령** (`<법령>` 루트)
-  - `<기본정보>`: `<법령명_한글>`, `<공포일자>`, `<시행일자>`, `<제개정구분>`, `<소관부처>`
-  - `<조문>` > `<조문단위>`: `<조문번호>`, `<조문제목>`, `<조문내용>`, `<항>`/`<호>` 구조
-  - `JO` 파라미터를 주면 응답에 `<조문별시행일자>`가 추가되며 해당 조문에 한정된 응답이 옴.
-- **행정규칙** (`<AdmRulService>` 루트)
-  - `<행정규칙기본정보>`: `<행정규칙명>`, `<행정규칙종류>`, `<발령일자>`, `<발령번호>`, `<소관부처명>`, `<시행일자>`
-  - 본문: `<조문내용>` 태그가 평탄하게 반복(CDATA 블록). 조·항·호 모두 하나의 텍스트.
-  - 특정 조문만 인용하려면 응답 텍스트를 받아 `제○조(` 패턴으로 잘라낸다.
-- **자치법규** (`<LawService>` 루트, 행정규칙과 다름)
-  - `<자치법규기본정보>`: `<자치법규명>`, `<지자체기관명>`, `<자치법규종류>`, `<공포일자>`, `<시행일자>`
-  - `<조문>` > `<조 조문번호="NNNNGG">` > `<조내용>`: 조문별로 구조화되어 있어 발췌 용이.
+```bash
+python3 scripts/law_api.py search --target admrul --query "전자금융감독규정"
+python3 scripts/law_api.py get --target admrul --id <행정규칙일련번호> --jo 7
+python3 scripts/law_api.py search --target ordin --query "가평군 옥외광고물"
+python3 scripts/law_api.py get --target ordin --mst <자치법규일련번호> --jo 2
+```
 
-응답 본문은 길다. 사용자에게 보여주기 전에 **인용에 필요한 최소 범위**(요청된 조문, 또는 사용자가 지목한 항·호)만 발췌한다.
+두 API는 조문 지정을 지원하지 않아 전문(행정규칙은 18만 자에 이르기도 한다)이 온다. `--jo`를 주면 스크립트가 해당 조만 발췌해 출력한다. 검색은 부분일치이므로 명칭과 `현행연혁구분`을 확인해 행을 고른다.
 
-### 검증된 식별자 예시 (테스트 결과 기준)
+### 조문번호와 결과
 
-| 법령/규칙 | target | 식별자(파라미터) |
-|---|---|---|
-| 민법 (시행 2026-03-17) | law | `--mst 284415` (= 법령일련번호) |
-| 전자금융감독규정 (시행 2026-02-13) | admrul | `--id 2100000274812` (= 행정규칙일련번호) |
-| 가평군 옥외광고물 조례 (시행 2026-04-20) | ordin | `--mst 2124537` (= 자치법규일련번호) |
+- `--jo`는 `390`, `제390조`, `제10조의2`처럼 조까지 쓴다(가지조는 '의'로, `제7조제1항`처럼 항·호를 붙이면 조 전체를 받는다). 6자리 인코딩과 4자리 재시도는 스크립트가 처리하고, XML 응답에서 끝내 조문이 없으면 exit 2로 알린다 — 조문번호를 추정해 바꾸지 않는다.
+- 법령 본문(`<법령>`): `<기본정보>`의 `<법령명_한글>`·`<시행일자>`, `<조문단위>`의 `<조문내용>`·`<항>`·`<호>`.
+- 행정규칙(`<AdmRulService>`): `<행정규칙기본정보>` + 평탄한 `<조문내용>`(조·항·호가 한 텍스트).
+- 자치법규(`<LawService>`): `<자치법규기본정보>` + `<조 조문번호='NNNNGG'>` > `<조내용>`.
+- 사용자에게는 인용에 필요한 최소 범위만 발췌해 보인다. 상세 구조는 `references/api_reference.md`.
 
 ---
 
@@ -177,43 +143,35 @@ python scripts/law_api.py get --target ordin --mst 2124537
 ### 5.2 법령 (target=eflaw)
 
 ```bash
-python scripts/law_api.py versions --lid <법령ID>                          # 버전 목록(연혁 포함, LID 한정)
-python scripts/law_api.py get-asof --lid <법령ID> --date 20190601 --jo 46  # 기준일 시행본+조문 일괄
+python3 scripts/law_api.py versions --lid <법령ID>                          # 버전 목록(연혁 포함, LID 한정)
+python3 scripts/law_api.py get-asof --lid <법령ID> --date 20190601 --jo 46  # 기준일 시행본+조문 일괄
 ```
 
 법령ID는 기존 `search --target law`로 확보한다(LID 한정이 부분일치 오염 — 예: "민법" 검색 시 난민법 — 을 차단). 단계별 전체 레시피는 `references/api_reference.md` 6-C·7장 참조.
 
-- `get-asof` 선택 규칙: (시행일자, MST) 중복 제거 후 **max{시행일자 ≤ 기준일}**. 기준일 이전 버전이 없으면(제정 전) 오류와 함께 최초 시행일을 안내한다.
+- `get-asof` 선택 규칙: (시행일자, MST) 중복 제거 후 **max{시행일자 ≤ 기준일}**. 기준일 이전 버전이 없으면(제정 전) 오류와 함께 최초 시행일을 안내한다. `--date`는 `20190601`·`2019-06-01`·`'2019. 6. 1.'`을 받는다.
 - 선택 결과(시행일자·MST·현행/연혁, 직후 개정의 공포 정보)는 **stderr 헤더**로 출력된다 — stdout은 응답 본문만. 연혁본이면 `⚠ 연혁본` 표지와 시행기간이 함께 출력된다.
-- 수동 조회 시: `get --target eflaw --mst <버전MST> --efyd <그 버전 시행일자>`. **ID(법령ID)를 쓰면 현행본이 반환되고 efYd가 무시되므로 금지**(스크립트가 차단).
+- 수동 조회 시: `get --target eflaw --mst <버전MST> --efyd <그 버전 시행일자>`. `--id`/`--lm`은 현행 시행본을 주므로 과거 버전에는 쓰지 않는다.
 - nw 필터 기본값 `1,3`(연혁+현행) — 시행예정본을 원천 배제.
 
-### 5.3 자치법규 (target=ordin, nw=2)
+### 5.3 자치법규·행정규칙 — 계통 확정
 
 ```bash
-python scripts/law_api.py versions --target ordin --query "가평군 옥외광고물"
-python scripts/law_api.py get-asof --target ordin --query "가평군 옥외광고물" --date 20150101
+python3 scripts/law_api.py versions --target ordin --query "가평군 옥외광고물"
+python3 scripts/law_api.py get-asof --target ordin --query "가평군 옥외광고물" --lid 2019869 --date 20150101
+python3 scripts/law_api.py get-asof --target admrul --query "전자금융감독규정" --date 20241225 --jo 7
 ```
 
-- 조례는 개정 과정에서 **명칭이 바뀌는 일이 잦다**(예: "…관리 조례" → "…관리와 옥외광고산업 진흥에 관한 조례"). 후보에 여러 명칭이 섞이면 get-asof가 경고를 출력하므로 **선택본 명칭을 반드시 확인**하고, 명칭 단절로 후보가 끊기면 사용자에게 구 명칭을 확인한다.
+- 검색이 부분일치라 다른 규정·조례가 섞인다("전자금융감독규정" → 시행세칙, "가평군 옥외광고물" → 발전기금 조례). 스크립트는 버전 사이에 고정된 **계통ID**(`행정규칙ID`·`자치법규ID`)로 한 계통만 남긴다: `--lid <계통ID>` → 계통이 하나 → 어느 버전 명칭이 `--query`와 정확히 같은 계통이 하나면 자동 선택. 그 밖에는 **계통 목록(옛 명칭 포함)을 보여주고 exit 2** — 목록에서 골라 `--lid`로 다시 실행한다.
+- 조례는 개정으로 **명칭이 바뀌는 일이 잦다**. 계통ID로 묶으므로 옛 명칭 버전도 함께 잡히고, 인용에는 선택본의 명칭을 쓴다.
 - 동명 조례 구분이 필요하면 `--org <시·도 코드> --sborg <시·군·구 코드>`로 지자체를 한정한다.
+- 행정규칙 **보조 경로 — 신구법비교 체인 역추적**(`--query` 대신 `--id <현행 행정규칙일련번호>`): 단계당 API 1회, 기본 상한 15단계(`--max-steps`). 연혁 검색의 교차 검증용.
+- 직전 개정 전후의 **조문 대비**는 `get --target admrulOldAndNew --id <일련번호>`(`신구법존재여부=N`이면 대비 데이터 없음).
 
-### 5.4 행정규칙 (target=admrul, nw=2)
-
-행정규칙도 목록 조회의 **`nw` 파라미터(1 현행, 2 연혁 — 공식 가이드)**로 연혁을 직접 검색한다. 연혁 행의 행정규칙일련번호로 기존 본문 조회(`get --target admrul --id`)가 그대로 동작한다(현행여부 N 전문, 라이브 검증).
-
-```bash
-python scripts/law_api.py versions --target admrul --query "전자금융감독규정"
-python scripts/law_api.py get-asof --target admrul --query "전자금융감독규정" --date 20241225
-```
-
-- 검색은 부분일치이므로(예: "전자금융감독규정" 검색에 시행세칙 포함) versions 출력의 **명칭·종류를 확인**한다. 후보에 다른 명칭이 섞이면 get-asof가 경고를 출력한다.
-- **보조 경로 — 신구법비교 체인 역추적**(`--query` 대신 `--id <현행 행정규칙일련번호>`): admrulOldAndNew 응답의 구조문이 직전 버전 일련번호를 주므로 한 단계씩 과거로 추적할 수 있다(단계당 API 1회, 기본 상한 15단계 `--max-steps`). 연혁 검색 결과의 교차 검증용.
-- 직전 개정 전후의 **조문 대비**가 필요하면 `get --target admrulOldAndNew --id <일련번호>`로 구조문/신조문을 직접 받는다(`신구법존재여부=N`이면 대비 데이터 없음).
-
-### 5.5 구법 인용 표기 (서면용)
+### 5.4 구법 인용 표기 (서면용)
 
 - 정식(판례식): **구 자본시장과 금융투자업에 관한 법률(2018. 12. 31. 법률 제16191호로 개정되기 전의 것) 제46조** — 괄호의 공포일자·번호는 **직후 버전의 공포 정보**다. get-asof가 stderr 헤더에 직후 개정 정보와 판례식 표기를 함께 출력한다.
+- 직후 버전이 **같은 개정의 나머지 시행분**(단계적 시행)이면 get-asof는 "구 민법(2024. 9. 20. 법률 제20432호로 개정되어 2026. 1. 1. 시행되기 전의 것)" 형태로 출력한다 — 부칙의 시행일 규정을 확인하고 최종 표기는 변호사가 정한다.
 - 약식: **(2018. 11. 1. 시행 구 자본시장법 제46조)**.
 - 본문 인용 시 연혁본임과 시행기간(해당 시행일 ~ 직후 버전 시행일 전일)을 함께 표시하고, **현행본과 절대 혼용하지 않는다**.
 
@@ -238,42 +196,33 @@ python scripts/law_api.py get-asof --target admrul --query "전자금융감독�
 
 ## 7. 자주 쓰이는 호출 레시피
 
-### 법령 검색 → 최신 시행본 본문 조회
+### 법령 현행 조문 (시행령·시행규칙 포함)
 
 ```bash
-# 1) "전자금융거래법" 검색
-python scripts/law_api.py search --target law --query "전자금융거래법" --display 5
-
-# 2) 검색 결과에서 가장 최신 시행본의 MST를 골라 본문 조회
-python scripts/law_api.py get --target law --mst 246234
-
-# 3) 특정 조문만 (제9조)
-python scripts/law_api.py get --target law --mst 246234 --jo 000900
-```
-
-### 시행령·시행규칙 본문 조회
-
-법령 검색 결과는 법률·시행령·시행규칙이 모두 별도 항목으로 나온다.
-같은 검색어로 검색해 시행령(이름에 "시행령" 포함) 항목의 MST를 사용한다.
-
-```bash
-python scripts/law_api.py search --target law --query "전자금융거래법 시행령" --display 3
-python scripts/law_api.py get --target law --mst <시행령 MST>
+python3 scripts/law_api.py get --target eflaw --lm "전자금융거래법" --jo 9
+python3 scripts/law_api.py get --target eflaw --lm "전자금융거래법 시행령" --jo 5
+# 명칭이 불확실하면 검색 → 법령ID
+python3 scripts/law_api.py search --target law --query "전자금융거래법" --display 5
+python3 scripts/law_api.py get --target eflaw --id <법령ID>
 ```
 
 ### 행정규칙(고시·훈령) 검색·본문
 
 ```bash
-python scripts/law_api.py search --target admrul --query "전자금융감독규정"
-python scripts/law_api.py get --target admrul --id <행정규칙ID>
+python3 scripts/law_api.py search --target admrul --query "전자금융감독규정"
+python3 scripts/law_api.py get --target admrul --id <행정규칙일련번호> --jo 7
 ```
+
+`--org`는 소관부처 **코드**(예: 금융위원회 1160100)만 동작한다 — 기관명을 넣으면 무시된다.
 
 ### 자치법규(조례) 검색·본문
 
 ```bash
-python scripts/law_api.py search --target ordin --query "서울특별시 옥외광고물 조례"
-python scripts/law_api.py get --target ordin --mst <자치법규일련번호>
+python3 scripts/law_api.py search --target ordin --query "옥외광고물" --org 6110000
+python3 scripts/law_api.py get --target ordin --mst <자치법규일련번호> --jo 2
 ```
+
+`--org`는 지자체 **코드**(예: 서울특별시 6110000)다 — 기관명을 넣으면 0건이다.
 
 ### 별표·서식 검색 → 다운로드 → 텍스트 추출
 
@@ -296,15 +245,15 @@ python scripts/law_api.py get --target ordin --mst <자치법규일련번호>
 
 ```bash
 # 1) 법령 별표·서식 목록 검색 (target=licbyl) → 응답 저장
-python scripts/law_api.py search --target licbyl --query "건축법" \
-    --display 20 --pretty --save-to ./byl_search_licbyl.xml
+python3 scripts/law_api.py search --target licbyl --query "위탁지정신청서" \
+    --display 20 --save-to <작업 폴더>/byl_search_licbyl.xml
 
-# 2) 응답에서 다운로드 URL을 자동 추출 → ./byl_downloads/에 저장 + PDF는 텍스트 추출
-python scripts/law_api.py download --from-search-xml ./byl_search_licbyl.xml \
-    --extract-text --limit 5
+# 2) 응답에서 다운로드 URL을 자동 추출 → 작업 폴더에 저장 + PDF는 텍스트 추출
+python3 scripts/law_api.py download --from-search-xml <작업 폴더>/byl_search_licbyl.xml \
+    --out-dir <작업 폴더>/byl_downloads --extract-text --limit 5
 
 # 3) 단건 직접 다운로드 (URL을 직접 알 때)
-python scripts/law_api.py download --url "/DRF/lawService.do?...별표파일URL..." \
+python3 scripts/law_api.py download --url "/DRF/lawService.do?...별표파일URL..." \
     --filename "건축법_별표1" --extract-text
 ```
 
@@ -327,10 +276,10 @@ HWP/HWPX는 자동 텍스트 추출이 어렵다 — 파일만 저장하고 사�
 
 ```bash
 # 1) 안건명 키워드로 검색 (예: 임차인 관련)
-python scripts/law_api.py search --target expc --query "임차" --display 20 --pretty
+python3 scripts/law_api.py search --target expc --query "임차" --display 20 --pretty
 
 # 2) 검색 결과의 <법령해석례일련번호>로 본문 조회
-python scripts/law_api.py get --target expc --id 332741 --pretty
+python3 scripts/law_api.py get --target expc --id 332741 --pretty
 ```
 
 #### 법령해석례 인용 형식 (서면용)
@@ -352,10 +301,10 @@ python scripts/law_api.py get --target expc --id 332741 --pretty
 
 - **OC 누락 / 잘못된 OC**: OC가 없으면 안내와 함께 종료한다. OC가 잘못되면 API가 HTML 오류 페이지, `resultCode≠00`, 또는 resultCode 없는 사용자 검증 실패 봉투(`<Response><result>…</result><msg>…</msg></Response>`, JSON이면 `{"result","msg"}`)를 반환하는데, 스크립트가 셋 모두 감지해 "OC 미등록·한도 초과·파라미터 오류" 취지의 메시지와 함께 비정상 종료한다(더 이상 오류 페이지·오류 봉투를 본문으로 오인하지 않음).
 - **검색 결과 0건**: 띄어쓰기·괄호·약칭을 바꿔가며 재시도한다(예: "전자금융거래법" / "전자금융거래법(약칭)").
-- **JO 인코딩 실패**: 6자리 지정 결과가 비면 스크립트가 4자리 변형으로 자동 재시도한다(위 4장 참조). 그래도 실패하면 본문 전체를 받아 사용자측에서 해당 조문을 발췌한다.
-- **HTML 응답으로 받고 싶을 때**: `--type HTML` 사용. 단, 인용·발췌가 필요할 때는 XML이 더 안정적.
+- **조문·식별자 없음**: 없는 MST·ID·LM은 "조회 결과 없음", 없는 조문은 "조문을 찾지 못했습니다"로 exit 2가 난다(캐시하지 않음). 식별자는 search로, 조문번호는 원문으로 다시 확인하고, 추정 인용하지 않는다.
+- **HTML 응답으로 받고 싶을 때**: `--type HTML` 사용. 단, 인용·발췌는 XML이 안정적이고, HTML은 오류 페이지와 구별할 수 없어 잘못된 OC여도 그대로 출력되며(exit 0) 캐시하지 않는다. 미시행 조문 대체도 하지 않는다.
 - **API 호출 횟수 제한**: 법제처 정책상 일일 한도가 있을 수 있다. 성공 응답은 로컬 캐시(아래)에 24시간 보관되어 같은 조회의 재호출을 자동으로 절약한다.
-- **eflaw 본문 조회에 ID(법령ID)를 사용**: 현행본이 반환되고 efYd가 무시된다(공식 가이드 명시). 과거본은 반드시 `--mst + --efyd` — 스크립트가 차단한다.
+- **미시행 조문**: `get --target law`가 '⚠ 공포일 기준 본문에 아직 시행되지 않은 내용'을 알리면 출력은 이미 시행본으로 바뀐 것이다. 시행 예정 조문이 필요하면 `--promulgated`로 받고, 서면에 시행 예정임을 적는다.
 - **기준일이 제정 전**: get-asof가 오류와 함께 최초 시행일을 안내한다. 기준일·법령 특정을 재확인.
 - **API가 응답하지 않거나 정확한 본문 확인이 불가능한 경우**: 임의로 추정 인용하지 말고 사용자에게 사실대로 알리고 확인을 요청한다.
 
@@ -363,8 +312,8 @@ python scripts/law_api.py get --target expc --id 332741 --pretty
 
 `search`·`get`·`versions`·`get-asof`의 API 응답을 로컬에 캐시해 세션·skill 간 중복 호출을 줄인다(파일 다운로드는 캐시 대상 아님).
 
-- 기본 위치 `~/.cache/wk-legal/law-api/`, 환경변수 `WK_LEGAL_CACHE_DIR`로 재정의.
-- TTL **24시간**(mtime 기준). 성공 응답만 저장한다. 캐시 키는 **OC를 제거한 요청 URL의 sha256**이고, law.go.kr가 응답 본문(검색 응답의 상세링크 등)에 echo하는 OC도 저장 전 `OC=MASKED`로 마스킹한다 — 인증키가 디스크에 남지 않는다. 캐시 적중 응답의 상세링크는 마스킹된 값이다(스크립트 동작 무관, 링크에 키가 필요하면 `--no-cache`).
+- 기본 위치 `~/.cache/wk-legal/law-api/`, 환경변수 `WK_LEGAL_CACHE_DIR`로 재정의. 만료 파일은 하루 한 번 자동 정리한다. Cowork 등 세션마다 새로 뜨는 VM에서는 캐시가 세션을 넘지 못한다.
+- TTL **24시간**(mtime 기준). 성공 응답만 저장한다. 캐시 키는 **OC를 제거한 요청 URL의 sha256**이다. law.go.kr가 응답 본문(검색 응답의 상세링크 등)에 echo하는 OC는 캐시·stdout·`--save-to` 파일에서 모두 `OC=MASKED`로 가리고, `--dry-run` URL은 `OC=***`로 출력한다.
 - 적중 시 stderr에 `CACHE:` 한 줄이 표시된다. 항상 새로 받으려면 `--no-cache`.
 
 ---
@@ -381,7 +330,7 @@ python scripts/law_api.py get --target expc --id 332741 --pretty
 협업 흐름 예시:
 1. 서면 skill이 활성화되어 청구원인을 작성 중
 2. "민법 제390조"를 인용해야 하는 상황 도달
-3. 본 skill의 `search` → `get`을 호출해 정확한 본문 확보
+3. 본 skill의 `get --target eflaw --lm`(명칭 불확실하면 `search` → `--id`)으로 시행 중인 본문 확보
 4. 서면에 인용 형식으로 삽입
 
 ---

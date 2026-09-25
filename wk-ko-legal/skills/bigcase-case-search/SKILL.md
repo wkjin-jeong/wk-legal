@@ -15,7 +15,7 @@ bigcase.ai(빅케이스) 판례 검색 사이트에서 사용자 질의와 관�
 
 1. **Chrome 실행 + bigcase.ai 로그인 필수**: 유료 구독 계정으로 로그인되어 있어야 판례 전문 열람이 자유롭습니다. 사용자가 Chrome에서 미리 로그인해 두었다는 전제로 동작합니다. 이 Skill은 Chrome 확장(Claude in Chrome)의 계정 기반 연결로 작동하므로 Claude가 동작하는 PC와 Chrome이 실행되는 PC는 같을 필요가 없습니다. 단 bigcase.ai 로그인은 Chrome이 실제 실행 중인 PC에서 사용자가 직접 마쳐 두어야 합니다.
 
-2. **Chrome MCP 도구 선택**: `mcp__claude-in-chrome__*`(`navigate`, `javascript_tool`, `read_page`, `computer`, `tabs_context_mcp` 등)를 사용합니다. bigcase는 URL 직접 진입이 가능하므로 대부분 `navigate` + `javascript_tool` 두 가지로 충분하며, `computer`(클릭)는 기간 드롭다운 등 일부 필터 조작에만 필요합니다.
+2. **Chrome MCP 도구 선택**: 이름에 `claude-in-chrome`(호스트에 따라 `Claude_in_Chrome`)이 들어간 Claude in Chrome 도구(현재 `mcp__claude-in-chrome__*` — `navigate`, `javascript_tool`, `read_page`, `computer`, `tabs_context_mcp` 등)를 사용합니다. bigcase는 URL 직접 진입이 가능하므로 대부분 `navigate` + `javascript_tool` 두 가지로 충분하며, `computer`(클릭)는 기간 드롭다운 등 일부 필터 조작에만 필요합니다.
 
 3. **연결된 브라우저 확인 + 선택**: `list_connected_browsers`로 연결된 Chrome 인스턴스를 확인하고, 여러 기기가 연결되어 있으면 어느 기기에서 bigcase.ai에 로그인했는지 사용자에게 확인한 뒤 `select_browser(deviceId)`로 지정합니다. 각 대화는 `tabs_context_mcp{createIfEmpty:true}`로 전용 탭을 확보한 뒤 그 `tabId`로 작업합니다.
 
@@ -36,6 +36,8 @@ bigcase.ai(빅케이스) 판례 검색 사이트에서 사용자 질의와 관�
 - **선고기간 (선택)**: '최근 1년/3년/5년' → 기간 드롭다운 UI로 적용.
 
 파라미터 값 표와 적용 방법은 `references/extraction.md` 1장을 따릅니다. 명시되지 않은 선택 파라미터는 적용하지 않습니다. 질의가 모호하거나 검색어 선정이 불확실하면 진행 전에 한 가지만 사용자에게 확인하세요.
+
+**사건번호 직조회(검증용 분기)**: 사건번호가 주어진 판례의 원문·상하급심 체인만 확인하면 되는 경우(서면 skill의 URL 직행 검증 — `shared/판례-인용-정책.md` 1.1-5)는 2~3단계를 건너뛰고 4단계의 본문 URL(`/cases/{법원명}/{사건번호}` — 사건번호는 **공식 표기**: 1999년 이전 접수분은 2자리 연도, 판례DB 정규형 `1999흐1`이 아니라 `99흐1`)로 바로 들어가 4단계·4.5단계만 수행한다. 보고서 파일은 사용자가 요청할 때만 쓴다.
 
 ### 2단계: 검색 실행 (직접 URL)
 
