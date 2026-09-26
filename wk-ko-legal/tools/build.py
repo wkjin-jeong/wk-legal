@@ -19,7 +19,7 @@
      '(N skills)'·'스킬 N종'이 실제 스킬 수와 같은지
   9. 마켓플레이스 등재 — 저장소 marketplace.json에 자기 항목이 있고 source가 이 폴더인지
 패키징:
-  evals/, __pycache__, .DS_Store, .env, *.pyc, *.bak* 제외 후
+  evals/, __pycache__, .DS_Store, .env, *.pyc, *.bak*, 최상위 tools/·CHANGELOG.md(개발·이력용 — 런타임 불필요) 제외 후
   저장소 부모 폴더에 <name>.plugin (zip) 생성.
 
 사용: python3 tools/build.py [--no-zip] [--plugin <폴더>]
@@ -45,6 +45,7 @@ OLD_NAMES = ("korean-civil-litigation-drafting", "korean-legal-advisory-drafting
 ALLOWED_OLD = {"law_api.py", ".env.example"}  # 런타임 호환용 구명칭 허용 파일
 EXCLUDE_DIR = {"evals", "__pycache__"}
 EXCLUDE_FILE = {".DS_Store", ".env", ".law_api.env"}  # 실제 인증키 파일 — 배포 zip에 포함 금지
+EXCLUDE_TOP = {"tools", "CHANGELOG.md"}  # 플러그인 최상위의 개발·이력 파일 — zip에서만 제외(git 설치본에는 남는다)
 # shared/ 참조 패턴: "shared/<파일>.md" 또는 "../../shared/<파일>.md" (코드펜스·따옴표 무관)
 SHARED_REF = re.compile(r"(?:\.\./\.\./)?shared/([\w가-힣.\-]+\.md)")
 # 드리프트 린트: (정규식, 사유, 예외 — 같은 줄에 이 정규식이 있으면 허용(금지 규정을 설명하는 줄 등))
@@ -233,7 +234,7 @@ def main() -> None:
             if not f.is_file():
                 continue
             rel = f.relative_to(ROOT)
-            if (any(d in rel.parts for d in EXCLUDE_DIR) or f.name in EXCLUDE_FILE
+            if (any(d in rel.parts for d in EXCLUDE_DIR) or f.name in EXCLUDE_FILE or rel.parts[0] in EXCLUDE_TOP
                     or f.suffix == ".pyc" or ".bak" in f.name):
                 continue
             z.write(f, str(rel))

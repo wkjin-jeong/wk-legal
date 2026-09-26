@@ -9,7 +9,7 @@ lbox.kr 주석서·실무서 검색에서 사용자 질의와 관련된 주석�
 
 이 Skill은 `lbox-case-search`(판례 검색)의 자매 Skill이며, 같은 lbox.kr 개편판 Chrome 자동화 패턴을 따릅니다.
 
-> lbox.kr 2026.6 개편판 기준입니다 — 검색은 홈 컴포저 "검색" 모드 → 작업(Task) → 결과 패널의 "주석·실무서" 탭, 법령은 이름·문서유형 필터로 좁히고, 본문은 `/book/{bookId}?tocId=…&nodeId=…&volumeHistoryId=…`(2벌 렌더 — node-id dedup). 개편 전 방식(`/v2/search/commentary`, 숫자 `statute` 코드)은 쓰지 마세요(변경 이력은 CHANGELOG 2.0.0).
+> lbox.kr 2026.6 개편판 기준입니다 — 검색은 홈 컴포저 "검색" 모드 → 작업(Task) → 결과 패널의 "주석·실무서" 탭, 법령은 이름·문서유형 필터로 좁히고, 본문은 `/book/{bookId}?tocId=…&nodeId=…&volumeHistoryId=…`(2벌 렌더 — node-id dedup). 개편 전 방식(`/v2/search/commentary`, 숫자 `statute` 코드)은 쓰지 마세요.
 
 ## 사전 조건 및 환경 점검
 
