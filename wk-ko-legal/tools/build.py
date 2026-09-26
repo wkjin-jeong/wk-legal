@@ -13,6 +13,7 @@
      references/*.md, shared/*.md, README.md (CHANGELOG·tools·evals·스크립트 제외)
   7. 절 포인터 실존 — '`references/…md` 2장'·'`shared/…md` 1.1-5'·'06 3장'이 가리키는
      번호의 제목(## 2. / ### 1.1 / ### 1-3.)이 대상 문서에 있는지
+  8. 스킬 수 표기 — plugin.json·마켓플레이스·README 두 곳의 '(N skills)'·'스킬 N종'이 실제 스킬 수와 같은지
 패키징:
   evals/, __pycache__, .DS_Store, .env, *.pyc, *.bak* 제외 후
   저장소 부모 폴더에 <name>.plugin (zip) 생성.
@@ -175,6 +176,16 @@ def main() -> None:
                 refs = sorted((sk_dir / "references").glob(f"{num}-*.md"))
                 if not refs or not has_section(refs[0].read_text(encoding="utf-8"), sec):
                     errors.append(f"{rel}: 끊긴 절 포인터 '{num} {sec}장'")
+
+    # 8) 스킬 수 표기 — 스킬을 더하거나 뺄 때 배포 문서의 개수 표기가 남기 쉽다
+    n_sk = sum(1 for sk in skills if (sk / "SKILL.md").is_file())
+    for f in (mf, ROOT.parent / ".claude-plugin" / "marketplace.json", ROOT.parent / "README.md", ROOT / "README.md"):
+        if not f.is_file():
+            continue
+        for i, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
+            for a, b in re.findall(r"(\d+) skills|스킬 (\d+)종", line):
+                if int(a or b) != n_sk:
+                    errors.append(f"{f.relative_to(ROOT.parent)}:{i}: 스킬 수 표기 {a or b} ≠ 실제 {n_sk}")
 
     if errors:
         fail(errors)

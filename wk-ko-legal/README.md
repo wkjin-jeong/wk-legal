@@ -1,6 +1,6 @@
 # wk-ko-legal
 
-한국 변호사 법률 사무용 스킬 8종을 단일 플러그인으로 관리한다. 설치 후 스킬은 `wk-ko-legal:<스킬명>` 네임스페이스로 등록된다.
+한국 변호사 법률 사무용 스킬 9종을 단일 플러그인으로 관리한다. 설치 후 스킬은 `wk-ko-legal:<스킬명>` 네임스페이스로 등록된다.
 
 | 스킬 | 역할 |
 |---|---|
@@ -8,6 +8,7 @@
 | ko-administrative-drafting | 행정쟁송 서면(행정소송·행정심판·집행정지·처분 전 단계) 작성·검토 — 원고·청구인 측 |
 | ko-criminal-drafting | 형사 서면(수사·공판·상소 변호, 고소·고발 대리) 작성·검토 |
 | ko-legal-advisory-drafting | 자문의견서 작성·검토 |
+| ko-evidence-analysis | 증거·기록 분석 — 쪽 단위 변환본에서 문건 카드·원천현황·타임라인·인물·주의메모(1층), 인부 검토표·진술 변천표 등 쟁점 분석(2층). 서면은 drafting 담당 |
 | ko-law-api | 국가법령정보 OPEN API 조회(법령·행정규칙·자치법규·별표·해석례) |
 | lbox-case-search | lbox.kr 판례 검색·정리 |
 | bigcase-case-search | bigcase.ai(빅케이스) 판례 검색·정리 |
@@ -20,8 +21,9 @@
 - drafting 4종은 로컬 실무지식베이스(기본 `~/LLM-wiki`, Cowork VM은 마운트된 `~/mnt/LLM-wiki`, `WK_LEGAL_WIKI_ROOT`로 재정의)가 있으면 문헌(실무제요)·서면가이드·서면DB를 활용한다(`shared/LLM-wiki-연동-정책.md`). 지식베이스가 없으면 기존 절차 그대로 동작한다.
 - 판례는 판례DB를 먼저 쓴다(`shared/판례-인용-정책.md` 1.): 원격 판례 MCP(llm-wiki 커넥터)와 로컬 판례DB(`{위키}/판례DB/_색인.sqlite` — `shared/case_db.py`로 읽기 전용 조회) 중 수록 범위가 최신인 쪽. 판례DB 원문은 원본 대조 없이 인용하고, 인용 형식은 무부호 전재 + 괄호 출처가 기본. 회귀 검사: `python3 tools/case_db_regress.py`.
 - lbox 2종·bigcase: Claude in Chrome + 해당 사이트(lbox.kr / bigcase.ai) 로그인 전제. 서면 작성에서는 판례DB로 부족한 쟁점·핵심 쟁점의 핵심 판례 검색·최신성·인용 수·사건번호 URL 직행 검증에만 쓴다.
+- ko-evidence-analysis: 입력은 쪽 단위 markdown 변환본(`pages/page_NNN.md` 4키 front-matter + `_index.md`) — PDF 변환은 스킬 밖에서 한다. `scripts/evidence.py`(표준 라이브러리)가 발견·게이트·색인·형사 증거목록·전수성·카드 기계 필드·파생물·인용 역검증·합산을 맡고, 산출물은 사건 폴더의 분석 폴더(기본 `기록분석/`)에만 쓴다. 기록 내용은 터미널에 내지 않는다. 회귀 검사(합성 픽스처): `python3 tools/evidence_regress.py`. drafting 4종에는 분석 산출물을 받는 조항이 아직 없다(일반 첨부로 읽힌다).
 - evals/는 개발용이다 — `tools/build.py`가 만드는 .plugin(zip)에서는 빠지지만, 마켓플레이스(git) 설치본에는 들어 있다(런타임에 적재되지는 않는다).
-- `tools/build.py`는 검증(구조·참조·드리프트 린트·절 포인터 실존) 뒤 패키징한다. 드리프트 린트는 개정 뒤 일부 파일에 남기 쉬운 낡은 표현(lbox 단독 확인, '–라 할 것입니다' 권장, '. 자', 옛 Chrome 도구명, `python` 실행, JS 분할 반환, 행정규칙일련번호 고정 예시)을 막는다 — 새 전수 grep 대상이 생기면 `DRIFT_PATTERNS`에 한 줄 추가한다.
+- `tools/build.py`는 검증(구조·참조·드리프트 린트·절 포인터 실존·스킬 수 표기) 뒤 패키징한다. 드리프트 린트는 개정 뒤 일부 파일에 남기 쉬운 낡은 표현(lbox 단독 확인, '–라 할 것입니다' 권장, '. 자', 옛 Chrome 도구명, `python` 실행, JS 분할 반환, 행정규칙일련번호 고정 예시)을 막는다 — 새 전수 grep 대상이 생기면 `DRIFT_PATTERNS`에 한 줄 추가한다.
 
 ## 라이선스
 
