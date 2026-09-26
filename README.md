@@ -6,7 +6,8 @@
 
 | 플러그인 | 설명 |
 |---|---|
-| [`wk-ko-legal`](./wk-ko-legal) | 한국 변호사 법률 사무 스킬 번들 (민사·행정·형사 서면·자문의견서 작성, 증거·기록 분석, 법령 API 조회, lbox·bigcase 판례 검색, lbox 주석서 검색 — 9 skills) |
+| [`wk-ko-legal`](./wk-ko-legal) | 한국 변호사 법률 사무 스킬 번들 (민사·행정·형사 서면·자문의견서 작성, 법령 API 조회, lbox·bigcase 판례 검색, lbox 주석서 검색 — 8 skills) |
+| [`wk-ko-evidence`](./wk-ko-evidence) | (실험) 한국 소송 증거·기록 분석 — `ko-evidence-analysis` 1개. 유용성 검증 뒤 `wk-ko-legal` 편입 검토 |
 
 ## 설치
 
@@ -15,9 +16,10 @@ Claude Code에서:
 ```
 /plugin marketplace add https://github.com/wkjin-jeong/wk-legal
 /plugin install wk-ko-legal@wk-legal
+/plugin install wk-ko-evidence@wk-legal   # 실험 플러그인(선택)
 ```
 
-설치 후 스킬은 `wk-ko-legal:<스킬명>` 네임스페이스로 등록됩니다.
+설치 후 스킬은 `wk-ko-legal:<스킬명>`(실험 플러그인은 `wk-ko-evidence:<스킬명>`) 네임스페이스로 등록됩니다.
 
 ## 마켓플레이스 갱신
 
@@ -29,7 +31,7 @@ Claude Code에서:
 
 ## 개발
 
-플러그인 검증·패키징 스크립트는 [`wk-ko-legal/tools/build.py`](./wk-ko-legal/tools/build.py)를 참고하세요. 자세한 내용은 [플러그인 README](./wk-ko-legal/README.md).
+플러그인 검증·패키징 스크립트는 [`wk-ko-legal/tools/build.py`](./wk-ko-legal/tools/build.py)를 참고하세요. 다른 플러그인은 `--plugin <폴더>`로 검증·패키징합니다(예: `--plugin wk-ko-evidence`). 자세한 내용은 [플러그인 README](./wk-ko-legal/README.md).
 
 ## 라이선스
 

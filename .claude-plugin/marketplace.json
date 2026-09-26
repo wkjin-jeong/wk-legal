@@ -10,7 +10,12 @@
     {
       "name": "wk-ko-legal",
       "source": "./wk-ko-legal",
-      "description": "한국 변호사 법률 사무 스킬 번들 — 민사·행정·형사 서면 및 자문의견서 작성, 증거·기록 분석, 법령 API 조회, lbox·bigcase 판례 검색, lbox 주석서 검색 (9 skills)"
+      "description": "한국 변호사 법률 사무 스킬 번들 — 민사·행정·형사 서면 및 자문의견서 작성, 법령 API 조회, lbox·bigcase 판례 검색, lbox 주석서 검색 (8 skills)"
+    },
+    {
+      "name": "wk-ko-evidence",
+      "source": "./wk-ko-evidence",
+      "description": "(실험) 한국 소송 증거·기록 분석 — 문건 다이제스트·원천 현황·타임라인과 쟁점별 분석표, 인용 원문 기계 대조. 유용성 검증 뒤 wk-ko-legal 편입 검토"
     }
   ]
 }

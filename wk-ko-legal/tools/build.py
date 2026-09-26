@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""wk-ko-legal 플러그인 일괄 검증 + 패키징 (표준 라이브러리만 사용).
+"""플러그인 일괄 검증 + 패키징 (표준 라이브러리만 사용). 기본 대상은 wk-ko-legal, 같은 저장소의 다른
+플러그인은 --plugin <폴더>(예: wk-ko-evidence).
 
 검증 항목:
   1. plugin.json 존재·필수 필드(name, version)
@@ -8,17 +9,20 @@
   4. 구명칭(korean-*) 잔존 검사 — 허용 예외: law_api.py, .env.example,
      ko-law-api/SKILL.md 의 '~/.config/korean-law-api/.env' 경로 행
   5. SKILL.md·references/*.md 가 참조하는 shared/*.md 실존 여부
-     (예: '../../shared/기본-문체-규칙.md', 'shared/판례-인용-정책.md')
+     (예: '../../shared/기본-문체-규칙.md', 'shared/판례-인용-정책.md') — 자기 shared/가 없는 플러그인은
+     같은 저장소 다른 플러그인의 shared/에서 찾는다(함께 설치될 때 쓰는 파일이 남아 있는지)
   6. 드리프트 린트 — 개정 뒤 일부 파일에 남기 쉬운 낡은 표현(DRIFT_PATTERNS). 대상: SKILL.md,
      references/*.md, shared/*.md, README.md (CHANGELOG·tools·evals·스크립트 제외)
   7. 절 포인터 실존 — '`references/…md` 2장'·'`shared/…md` 1.1-5'·'06 3장'이 가리키는
      번호의 제목(## 2. / ### 1.1 / ### 1-3.)이 대상 문서에 있는지
-  8. 스킬 수 표기 — plugin.json·마켓플레이스·README 두 곳의 '(N skills)'·'스킬 N종'이 실제 스킬 수와 같은지
+  8. 스킬 수 표기 — plugin.json·마켓플레이스의 자기 항목·플러그인 README·저장소 README에서 자기 이름이 든 줄의
+     '(N skills)'·'스킬 N종'이 실제 스킬 수와 같은지
+  9. 마켓플레이스 등재 — 저장소 marketplace.json에 자기 항목이 있고 source가 이 폴더인지
 패키징:
   evals/, __pycache__, .DS_Store, .env, *.pyc, *.bak* 제외 후
   저장소 부모 폴더에 <name>.plugin (zip) 생성.
 
-사용: python3 tools/build.py [--no-zip]
+사용: python3 tools/build.py [--no-zip] [--plugin <폴더>]
 종료코드: 0 정상 / 1 검증 실패
 """
 from __future__ import annotations
@@ -29,7 +33,13 @@ import sys
 import zipfile
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent  # 기본: 이 파일이 든 플러그인(wk-ko-legal)
+if "--plugin" in sys.argv:  # 같은 저장소의 다른 플러그인 — 현재 폴더 기준, 없으면 저장소 루트 기준
+    _i = sys.argv.index("--plugin")
+    if _i + 1 >= len(sys.argv):
+        sys.exit("ERROR --plugin 뒤에 플러그인 폴더가 필요하다")
+    _cands = [Path.cwd() / sys.argv[_i + 1], ROOT.parent / sys.argv[_i + 1]]
+    ROOT = next((c.resolve() for c in _cands if (c / ".claude-plugin" / "plugin.json").is_file()), _cands[0].resolve())
 OLD_NAMES = ("korean-civil-litigation-drafting", "korean-legal-advisory-drafting",
              "korean-legal-writing-plan", "korean-law-api")
 ALLOWED_OLD = {"law_api.py", ".env.example"}  # 런타임 호환용 구명칭 허용 파일
@@ -138,6 +148,13 @@ def main() -> None:
     # 5) shared/ 참조 실존 — 모든 SKILL.md·references/*.md 본문에서 shared 참조를 찾아
     #    shared/ 아래 실존 검사(없으면 FAIL).
     shared_dir = ROOT / "shared"
+    # 자기 shared/가 없는 플러그인(실험 플러그인 등)은 같은 저장소 다른 플러그인의 shared/를 가리킨다
+    shared_dirs = [shared_dir] if shared_dir.is_dir() else sorted(
+        p / "shared" for p in ROOT.parent.iterdir() if (p / ".claude-plugin" / "plugin.json").is_file() and (p / "shared").is_dir())
+
+    def find_shared(fname: str) -> Path | None:
+        return next((d / fname for d in shared_dirs if (d / fname).is_file()), None)
+
     md_targets: list[Path] = []
     for sk in skills:
         sm = sk / "SKILL.md"
@@ -150,7 +167,7 @@ def main() -> None:
         except (UnicodeDecodeError, OSError):
             continue
         for shared_name in set(SHARED_REF.findall(body)):
-            if not (shared_dir / shared_name).is_file():
+            if not find_shared(shared_name):
                 errors.append(f"{md.relative_to(ROOT)}: shared 참조 파일 없음 shared/{shared_name}")
 
     # 6) 드리프트 린트 + 7) 절 포인터 실존
@@ -168,7 +185,7 @@ def main() -> None:
         sk_dir = md.parent if md.name == "SKILL.md" else md.parent.parent
         for path, sec in set(SECTION_REF.findall(text)):
             ref_name = path.rsplit("/", 1)[1]
-            tgt = shared_dir / ref_name if "shared/" in path else sk_dir / "references" / ref_name
+            tgt = (find_shared(ref_name) or shared_dir / ref_name) if "shared/" in path else sk_dir / "references" / ref_name
             if tgt.is_file() and not has_section(tgt.read_text(encoding="utf-8"), sec):
                 errors.append(f"{rel}: 끊긴 절 포인터 '{path} {sec}' — 대상 문서에 {sec} 제목 없음")
         if md.name == "SKILL.md":
@@ -178,14 +195,30 @@ def main() -> None:
                     errors.append(f"{rel}: 끊긴 절 포인터 '{num} {sec}장'")
 
     # 8) 스킬 수 표기 — 스킬을 더하거나 뺄 때 배포 문서의 개수 표기가 남기 쉽다
+    #    저장소 README·마켓플레이스는 여러 플러그인을 담으므로 자기 이름이 든 줄·자기 항목만 본다
     n_sk = sum(1 for sk in skills if (sk / "SKILL.md").is_file())
-    for f in (mf, ROOT.parent / ".claude-plugin" / "marketplace.json", ROOT.parent / "README.md", ROOT / "README.md"):
+    count_re = re.compile(r"(\d+) skills|스킬 (\d+)종")
+    for f, must in ((mf, None), (ROOT / "README.md", None), (ROOT.parent / "README.md", f"`{name}`")):
         if not f.is_file():
             continue
         for i, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
-            for a, b in re.findall(r"(\d+) skills|스킬 (\d+)종", line):
+            if must and must not in line:
+                continue
+            for a, b in count_re.findall(line):
                 if int(a or b) != n_sk:
                     errors.append(f"{f.relative_to(ROOT.parent)}:{i}: 스킬 수 표기 {a or b} ≠ 실제 {n_sk}")
+    # 9) 마켓플레이스 등재
+    mkt = ROOT.parent / ".claude-plugin" / "marketplace.json"
+    if mkt.is_file():
+        entry = next((e for e in json.loads(mkt.read_text(encoding="utf-8")).get("plugins", []) if e.get("name") == name), None)
+        if not entry:
+            errors.append(f"marketplace.json: '{name}' 항목 없음")
+        else:
+            if entry.get("source") != f"./{ROOT.name}":
+                errors.append(f"marketplace.json: '{name}' source {entry.get('source')!r} ≠ './{ROOT.name}'")
+            for a, b in count_re.findall(entry.get("description", "")):
+                if int(a or b) != n_sk:
+                    errors.append(f"marketplace.json: '{name}' 스킬 수 표기 {a or b} ≠ 실제 {n_sk}")
 
     if errors:
         fail(errors)

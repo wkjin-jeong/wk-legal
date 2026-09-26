@@ -97,7 +97,7 @@ description: 소송·수사·행정심판 단계를 불문하고 증거·기록(
 
 ## 7. 출력·파일 규칙
 
-분석 산출물은 표 위주의 내부 작업물이므로 `shared/기본-문체-규칙.md`의 개조식·표 제한을 적용하지 않는다.
+분석 산출물은 표 위주의 내부 작업물이므로 서면 문체 규칙(`wk-ko-legal`의 `shared/기본-문체-규칙.md`)의 개조식·표 제한을 적용하지 않는다.
 
 ```
 {분석 폴더}/
@@ -141,7 +141,7 @@ E=$(find "$HOME" -maxdepth 8 -path '*/ko-evidence-analysis/scripts/evidence.py' 
 - `references/04-1층-다이제스트.md` — 카드 형식·문서 종류별 스키마, 대용량 문건, 파생물, 서브에이전트 브리프
 - `references/05-2층-쟁점분석.md` — 인계 front-matter, 산출물별 열 구성, 방법론 포인터, drafting 접합점
 - `references/06-표식-어휘.md` — 미해결 표식의 canonical 목록
-- `../../shared/판례-인용-정책.md` · `../../shared/LLM-wiki-연동-정책.md` — 판례 확인, 로컬 실무지식베이스(존재 게이트·방화벽)
+- `shared/판례-인용-정책.md` · `shared/LLM-wiki-연동-정책.md` — 판례 확인, 로컬 실무지식베이스(존재 게이트·방화벽). `wk-ko-legal` 플러그인의 파일이라 함께 설치돼 있을 때만 쓴다 — 위치는 `find "$HOME" -maxdepth 8 -path '*/shared/판례-인용-정책.md' 2>/dev/null | head -1`로 찾고(같은 폴더에 연동 정책), 없으면 판례는 `[판례 미확인]`으로 남긴다
 
 ## 10. 흔한 함정과 회피법
 
