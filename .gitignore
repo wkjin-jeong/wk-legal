@@ -1,9 +1,16 @@
 # 빌드 산출물 (tools/build.py 생성물) — 마켓플레이스 설치에는 불필요
 *.plugin
 
+# 설계 검토·연구 문서 (로컬 전용 — 사용자 환경 조사 내용 포함, 공개 저장소에 올리지 않음)
+/docs/
+
 # OS / 편집기
 .DS_Store
 
 # Python
 __pycache__/
 *.pyc
+
+# 법령 API 인증키 파일 (ko-law-api) — 공개 저장소이므로 절대 커밋하지 않음
+.env
+.law_api.env

@@ -8,13 +8,14 @@
   {"query": "상대방 준비서면 반박 논리 정리해서 우리 측 준비서면으로 완성해줘", "should_trigger": true},
   {"query": "소유권이전등기 청구 소장 지금 바로 본문까지 써줘", "should_trigger": true},
   {"query": "이 png로 첨부한 상대방 서면 읽고 재반박 준비서면 작성해줘", "should_trigger": true},
+  {"query": "소장 본격적으로 쓰기 전에 청구취지 방향이랑 목차, 쟁점만 먼저 잡아줘. 초안은 나중에", "should_trigger": true},
 
   {"query": "영업정지 처분 취소 소장 써줘. 처분서 첨부할게", "should_trigger": false},
   {"query": "변호인의견서 초안 작성해줘. 검찰에 불기소 의견 낼 거야", "should_trigger": false},
   {"query": "은행 전자금융거래 관련 자문의견서 초안 써줘", "should_trigger": false},
-  {"query": "소장 본격적으로 쓰기 전에 청구취지 방향이랑 목차, 쟁점만 먼저 잡아줘. 초안은 나중에", "should_trigger": false},
   {"query": "이번 물품공급계약서 초안 새로 작성해줘", "should_trigger": false},
   {"query": "대여금 사건 관련 대법원 판례 lbox에서 검색해서 정리해줘", "should_trigger": false},
   {"query": "민법 제618조 임대차 조문 본문 찾아줘", "should_trigger": false},
-  {"query": "내 lbox 사건들 이번 주 기일 잡힌 거 있는지 진행상황 업데이트해줘", "should_trigger": false}
+  {"query": "내 lbox 사건들 이번 주 기일 잡힌 거 있는지 진행상황 업데이트해줘", "should_trigger": false},
+  {"query": "채권압류 및 추심명령 요건이 뭐야? 서면 말고 간단히 설명만 해줘", "should_trigger": false}
 ]

@@ -6,9 +6,9 @@
 
 - **검색 모드가 안 잡힘 / "자동"으로만 실행됨**: 컴포저 제출 전에 **돋보기(검색) 아이콘**을 클릭해 하이라이트(흰 둥근 박스)가 생긴 것을 `zoom`으로 확인한 뒤 제출한다. "자동"으로도 검색형 질의는 검색으로 가지만, 결과 패널이 안 뜨면 검색 모드를 명시 선택해 다시 제출한다.
 
-- **`Runtime.evaluate timed out` (45초)**: `navigate`나 제출 클릭 **직후** 곧바로 `javascript_tool`을 부르면 렌더링과 충돌해 timeout이 난다. `navigate`/클릭과 `javascript_tool`을 **별개 호출로 분리**하고 사이에 짧은 텀(메시지 1~2회)을 둔다. 처음엔 `browser_batch`로 묶지 말 것. 두 번 이상 retry해도 실패하면 그 카드는 건너뛴다. **JS 내부에 대기 루프(`for…sleep`)를 넣지 말 것.**
+- **`Runtime.evaluate timed out` (45초)**: `navigate`나 제출 클릭 **직후** 곧바로 `javascript_tool`을 부르면 렌더링과 충돌해 timeout이 난다. batch 안에서 이동·클릭 뒤에 `computer` `wait` 2~3초를 넣는 것이 기본이다(`references/extraction.md` 0장). 그래도 timeout이면 그 페이지만 이동/클릭과 추출을 별개 호출로 나누고 텀을 늘린다. 두 번 이상 retry해도 실패하면 그 카드는 건너뛴다. **JS 내부에 대기 루프를 넣지 말 것**(기다림은 `computer` `wait`로, JS 안의 짧은 대기는 최상위 `await`로 — async IIFE는 `{}`가 돌아온다).
 
-- **본문이 비어 보임 / `innerText`가 작음**: 개편 후 본문은 DOM에 정상 적재되므로 보통 비지 않는다. 적재 판정은 `innerText`가 아니라 **`references/extraction.md` 2장 (1)의 `recoveredLen`/`mainCount`/`judges`** 로 한다. 단락 추출은 `data-node-id="lbox-paragraph-main-*"` 셀렉터로 한다(`get_page_text`보다 정확). **개편 전의 `<script>` 페이로드 복원은 쓰지 말 것** — 다른 사건 텍스트가 노이즈로 섞인다.
+- **본문이 비어 보임 / `innerText`가 작음**: 개편 후 본문은 DOM에 정상 적재되므로 보통 비지 않는다. 적재 판정은 `innerText`가 아니라 **`references/extraction.md` 2장 (1)의 `recoveredLen`/`mainCount`/`judges`** 로 한다. 단락 추출은 `data-node-id="lbox-paragraph-main-*"` 셀렉터로 한다 — 페이지 전체를 `get_page_text`로 읽으면 2벌 렌더·사이드바가 섞인다(`get_page_text`는 반환 규약으로 내놓은 결과를 받을 때만 쓴다). **개편 전의 `<script>` 페이로드 복원은 쓰지 말 것** — 다른 사건 텍스트가 노이즈로 섞인다.
 
 - **본문 페이지가 로그인 페이지로 리다이렉트**: `recoveredLen`이 거의 0이고 `caseInfo`도 비며 URL이 로그인 페이지로 바뀐 경우에만 해당. 이때만 사용자에게 lbox.kr 재로그인 후 재시도를 안내한다. 특정 한 건만 비면 건너뛰고 진행 상황을 한 줄로 알린다.
 
@@ -18,10 +18,12 @@
 
 - **결과가 `[BLOCKED]`**: 쿼리스트링/쿠키성 데이터가 포함돼 차단된 것이다. URL은 pathname만 다루고(`new URL(href).pathname`), 쿠키·인증 토큰은 결과에 절대 포함하지 않는다.
 
-- **결과가 truncated**: 한 번에 받는 데이터가 크다. 카드는 `window.__lboxCards`, 본문은 `window.__lboxMain`에 저장해 두고 인덱스로 분할 접근하거나, 본문은 키워드 인근 ±2500자로 제한해 받는다(`references/extraction.md` 1·2장).
+- **결과가 `[TRUNCATED]`로 잘림**: 추출 JS가 결과를 직접 반환했다(`javascript_tool` 반환 상한 약 1,000자). `references/extraction.md` 0장의 반환 규약대로 결과를 페이지에 내놓고(OUT) `get_page_text`로 받는다 — 잘린 결과를 분할 재호출로 이어 붙이지 않는다.
+
+- **화면에 JSON 글자만 보임 / 클릭이 안 먹힘**: 내놓은 뒤 복구를 하지 않았다. 0장의 복구 JS를 실행한다. 그래도 이상하면 같은 URL로 다시 `navigate`한다(작업 페이지는 결과 패널이 닫혀 있으면 timeline의 "○○ 검색 결과" 카드를 눌러 다시 연다).
 
 - **`Tab not found`**: 탭이 닫혔거나 ID가 바뀌었다. `tabs_context_mcp`로 현재 탭 ID를 다시 확인하고 navigate한다.
 
-- **페이지네이션 번호가 안 보임**: 결과 리스트를 아래로 `scroll`하면 하단에 `1 2 3 4 5 … »` 가 나타난다. 컴포저 입력창이 리스트 하단을 가리면 조금 더 스크롤한 뒤 번호를 클릭한다.
+- **페이지 번호 JS가 `clicked:false`**: 번호 버튼은 처음에 1~5만 있다. 6페이지 이상이면 결과 리스트를 아래로 `scroll`해 `1 2 3 4 5 … »`를 노출시키고 `screenshot`으로 `»`·번호 위치를 확인해 클릭한다. 컴포저 입력창이 리스트 하단을 가리면 조금 더 스크롤한다.
 
 - **외부 도메인 링크**: 검색 결과·본문에서 lbox.kr 외 다른 도메인으로 가는 링크는 따라가지 않는다.

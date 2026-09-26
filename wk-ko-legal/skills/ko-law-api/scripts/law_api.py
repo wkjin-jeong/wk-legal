@@ -9,39 +9,37 @@
 
 사용 예
 -------
-    # 법령 검색
-    python law_api.py search --target law --query "민법" --display 5
+    # 현행 시행 조문 (정식 법령명을 알 때 — 1회 호출)
+    python3 law_api.py get --target eflaw --lm "민법" --jo 390
 
-    # 법령 본문 (MST 사용)
-    python law_api.py get --target law --mst 246234
+    # 법령 검색 → 법령ID로 현행 시행본
+    python3 law_api.py search --target law --query "전자금융거래법" --display 5
+    python3 law_api.py get --target eflaw --id 010199 --jo 9
 
-    # 법령의 특정 조문만 (제390조 -> JO=039000)
-    python law_api.py get --target law --mst 246234 --jo 039000
-
-    # 행정규칙 검색·본문
-    python law_api.py search --target admrul --query "전자금융감독규정"
-    python law_api.py get --target admrul --id 2100000200000
+    # 행정규칙 검색·본문(특정 조만)
+    python3 law_api.py search --target admrul --query "전자금융감독규정"
+    python3 law_api.py get --target admrul --id <행정규칙일련번호> --jo 7
 
     # 자치법규 검색·본문
-    python law_api.py search --target ordin --query "서울특별시 옥외광고물 조례"
-    python law_api.py get --target ordin --mst 1234567
+    python3 law_api.py search --target ordin --query "서울특별시 옥외광고물"
+    python3 law_api.py get --target ordin --mst <자치법규일련번호>
 
 OC(인증키) 처리
 ---------------
-- `--oc <값>` 인자가 1순위.
-- 없으면 환경변수 `LAW_GO_KR_OC`.
-- 둘 다 없으면 .env 자동 탐색(resolve_oc 참조). 모두 없으면 안내 메시지와 함께 오류 종료.
+- 우선순위: `--oc` 인자 > 환경변수 `LAW_GO_KR_OC` > 키 파일 자동 탐색(resolve_oc 참조).
+- `--oc`·명령줄 환경변수 지정은 세션 기록에 키를 남기므로 키 파일(`.law_api.env`)을 권장한다.
+- 모두 없으면 안내 메시지와 함께 오류 종료.
 
 응답 처리
 ---------
 - 기본 응답 포맷은 XML. `--type JSON` 또는 `--type HTML`로 변경 가능.
-- 본 스크립트는 응답 본문을 stdout으로 그대로 출력한다(파싱은 호출자에게 위임).
+- 응답 본문을 stdout으로 출력한다. law.go.kr가 본문에 echo하는 OC는 출력·저장 전에 마스킹한다.
 - `--pretty` 플래그를 주면 XML/JSON을 보기 좋게 정렬한다.
 - `--save-to <경로>`를 주면 응답 본문을 파일로도 저장한다.
 
 종속성
 ------
-표준 라이브러리만 사용 (urllib, xml.etree, json, argparse).
+표준 라이브러리만 사용 (urllib, xml.etree, json, argparse). Python 3.9 이상.
 """
 
 from __future__ import annotations
@@ -52,11 +50,14 @@ import json
 import os
 import re
 import sys
+import tempfile
 import time
+from datetime import datetime, timedelta, timezone
 import urllib.error
 import urllib.parse
 import urllib.request
 import xml.dom.minidom
+import xml.etree.ElementTree as ET
 import xml.etree.ElementTree as ET
 
 BASE_SEARCH = "https://www.law.go.kr/DRF/lawSearch.do"
@@ -132,6 +133,46 @@ def _cache_write(url: str, body: str) -> None:
         os.replace(tmp, path)  # 원자적 교체 — 부분 기록 파일이 캐시에 남지 않도록
     except OSError:
         return
+    _cache_prune()
+
+
+def _cache_prune() -> None:
+    """TTL이 지난 캐시 파일을 하루 한 번 정리한다(표식 파일 mtime 기준). 실패는 무시."""
+    d = _cache_dir()
+    marker = os.path.join(d, ".last_prune")
+    now = time.time()
+    try:
+        if now - os.path.getmtime(marker) < CACHE_TTL_SECONDS:
+            return
+    except OSError:
+        pass
+    try:
+        for name in os.listdir(d):
+            if not (name.endswith(".body") or name.endswith(".tmp")):
+                continue
+            p = os.path.join(d, name)
+            try:
+                if now - os.path.getmtime(p) > CACHE_TTL_SECONDS:
+                    os.remove(p)
+            except OSError:
+                continue
+        with open(marker, "w", encoding="utf-8") as f:
+            f.write(str(int(now)))
+    except OSError:
+        return
+
+
+def _today() -> str:
+    """오늘(한국 시간) YYYYMMDD. 시험용으로 LAW_API_TODAY 환경변수로 고정할 수 있다."""
+    fixed = os.environ.get("LAW_API_TODAY", "").strip()
+    if len(fixed) == 8 and fixed.isdigit():
+        return fixed
+    return datetime.now(timezone(timedelta(hours=9))).strftime("%Y%m%d")
+
+
+def _display_url(url: str) -> str:
+    """사람·모델에게 보여줄 URL — OC 값을 ***로 가린다(--dry-run 등)."""
+    return re.sub(r"([?&]OC=)[^&]*", r"\1***", url)
 
 
 def _mask_oc_in_body(body: str, url: str) -> str:
@@ -152,6 +193,11 @@ def _mask_oc_in_body(body: str, url: str) -> str:
     quoted = urllib.parse.quote(oc, safe="")
     if quoted != oc:
         masked = masked.replace("OC=" + quoted, "OC=MASKED")
+    # HTML 응답은 키를 <input type="hidden" id="OC" value="<키>"> 등 'OC=' 없이도 싣는다 — 값 자체를 가린다.
+    # (너무 짧은 값은 본문 오염 위험이 있어 제외)
+    if len(oc) >= 4:
+        for v in {oc, quoted}:
+            masked = masked.replace(v, "MASKED")
     return masked
 
 
@@ -202,6 +248,37 @@ def _find_validation_envelope_error(body: str) -> str | None:
             if jmsg:
                 parts.append(f'msg="{jmsg}"')
             return " ".join(parts)
+    return None
+
+
+def _find_not_found(body: str) -> str | None:
+    """본문 조회의 '일치하는 …이 없습니다' 응답이면 그 문구를, 아니면 None.
+
+    식별자(MST·ID·LM)가 틀리면 API는 HTTP 200으로
+      XML : <Law>일치하는 법령이 없습니다.  법령명을 확인하여 주십시오.</Law>
+      JSON: {"Law": "일치하는 법령이 없습니다. …"}
+    를 준다(행정규칙·자치법규·해석례도 같은 형태). 자식 요소 없는 단일 루트 + '없습니다'로 판별한다.
+    검색 0건(<LawSearch>…<totalCnt>0…)은 자식이 있으므로 해당하지 않는다.
+    """
+    s = body.strip()
+    if len(s) > 1000 or "없습니다" not in s:
+        return None
+    if s.startswith("{"):
+        try:
+            obj = json.loads(s)
+        except ValueError:
+            return None
+        if isinstance(obj, dict) and len(obj) == 1:
+            val = next(iter(obj.values()))
+            if isinstance(val, str) and "없습니다" in val:
+                return val.strip()
+        return None
+    try:
+        root = ET.fromstring(s)
+    except ET.ParseError:
+        return None
+    if len(root) == 0 and "없습니다" in (root.text or ""):
+        return " ".join((root.text or "").split())
     return None
 
 
@@ -274,20 +351,30 @@ VALID_TYPES = ("XML", "JSON", "HTML")
 
 def _candidate_dotenv_paths() -> list[str]:
     """
-    .env 파일 탐색 후보를 우선순위 순으로 반환한다.
+    키 파일 탐색 후보를 우선순위 순으로 반환한다.
     우선순위:
       1) 환경변수 LAW_API_DOTENV로 사용자가 명시한 경로
-      2) 현재 작업 디렉터리의 .env
-      3) 스크립트가 위치한 폴더(scripts/)의 .env
-      4) 스크립트 폴더의 부모(=skill 폴더)의 .env
-      5) ~/.law_api.env
-      6) ~/.config/korean-law-api/.env
+      2) 현재 작업 디렉터리부터 루트까지 거슬러 올라가며 찾은 .law_api.env
+         (Cowork 등 샌드박스: 마운트된 작업 폴더 최상위에 한 번 두면 하위 어디서든 발견)
+      3) 현재 작업 디렉터리의 .env
+      4) 스크립트가 위치한 폴더(scripts/)의 .env
+      5) 스크립트 폴더의 부모(=skill 폴더)의 .env
+      6) ~/.law_api.env
+      7) ~/.config/korean-law-api/.env
     """
     candidates: list[str] = []
 
     explicit = os.environ.get("LAW_API_DOTENV")
     if explicit:
-        candidates.append(explicit)
+        candidates.append(os.path.expanduser(explicit))
+
+    d = os.path.abspath(os.getcwd())
+    while True:
+        candidates.append(os.path.join(d, ".law_api.env"))
+        parent = os.path.dirname(d)
+        if parent == d:
+            break
+        d = parent
 
     candidates.append(os.path.join(os.getcwd(), ".env"))
 
@@ -362,74 +449,56 @@ def _parse_dotenv(path: str) -> dict[str, str]:
 
 def _load_dotenv_into_environ(verbose: bool = False) -> str | None:
     """
-    탐색 경로 중 첫 번째로 존재하는 .env 파일을 로드해 os.environ에 채운다.
-    이미 설정된 환경변수는 덮어쓰지 않는다(환경변수 우선 유지).
-    반환: 로드한 파일의 절대 경로(없으면 None).
+    탐색 경로를 순서대로 보며 LAW_GO_KR_OC가 들어 있는 첫 파일에서 그 키만 os.environ에 채운다.
+    키가 없는 파일(다른 프로젝트의 .env 등)은 건너뛴다 — 무관한 cwd의 .env가 뒤의 키 파일을
+    가리지 않게 하기 위함. 다른 키는 환경에 주입하지 않는다.
+    반환: 키를 읽은 파일의 절대 경로(없으면 None).
     """
     for path in _candidate_dotenv_paths():
         if not os.path.isfile(path):
             continue
-        kv = _parse_dotenv(path)
-        if not kv:
+        value = _parse_dotenv(path).get("LAW_GO_KR_OC", "").strip()
+        if not value:
+            if verbose:
+                sys.stderr.write(f"INFO: LAW_GO_KR_OC 없는 파일 건너뜀: {path}\n")
             continue
-        applied: list[str] = []
-        for k, v in kv.items():
-            if k not in os.environ:
-                os.environ[k] = v
-                applied.append(k)
+        os.environ["LAW_GO_KR_OC"] = value
         if verbose:
-            if applied:
-                sys.stderr.write(
-                    f"INFO: .env 로드: {path} (적용된 키: {', '.join(applied)})\n"
-                )
-            else:
-                sys.stderr.write(
-                    f"INFO: .env 발견했으나 모든 키가 이미 환경변수에 있음: {path}\n"
-                )
+            sys.stderr.write(f"INFO: 키 파일 로드: {path}\n")
         return path
     return None
 
 
 def resolve_oc(cli_oc: str | None) -> str:
     """
-    OC 우선순위: --oc 인자 > LAW_GO_KR_OC 환경변수 > .env 자동 로드.
-
-    .env 자동 탐색 경로(첫 발견 후 멈춤):
-      1) $LAW_API_DOTENV
-      2) ./.env (cwd)
-      3) <스크립트 폴더>/.env
-      4) <스크립트 폴더의 부모 = skill 폴더>/.env
-      5) ~/.law_api.env
-      6) ~/.config/korean-law-api/.env
+    OC 우선순위: --oc 인자 > LAW_GO_KR_OC 환경변수 > 키 파일 자동 로드(_candidate_dotenv_paths).
     """
     if cli_oc:
+        sys.stderr.write(
+            "NOTE: --oc로 넘긴 키는 명령 기록(세션 로그)에 남습니다 — "
+            "작업 폴더의 .law_api.env(LAW_GO_KR_OC=…) 또는 ~/.config/korean-law-api/.env를 쓰세요.\n"
+        )
         return cli_oc
 
     oc = os.environ.get("LAW_GO_KR_OC")
     if oc:
         return oc
 
-    # 환경변수도 인자도 없으면 .env 자동 로드 시도
+    # 환경변수도 인자도 없으면 키 파일 자동 로드 시도
     verbose = os.environ.get("LAW_API_VERBOSE", "").lower() in ("1", "true", "yes")
-    loaded_path = _load_dotenv_into_environ(verbose=verbose)
+    _load_dotenv_into_environ(verbose=verbose)
     oc = os.environ.get("LAW_GO_KR_OC")
     if oc:
         return oc
 
     sys.stderr.write(
-        "ERROR: OC(인증키)가 없습니다. 다음 중 하나로 제공하세요.\n"
-        "  - CLI 인자:    --oc <your_id>\n"
-        "  - 환경변수:    export LAW_GO_KR_OC=<your_id>\n"
-        "  - .env 파일:   다음 위치 중 한 곳에 'LAW_GO_KR_OC=<your_id>' 한 줄을 작성\n"
-        f"      • {os.path.join(os.getcwd(), '.env')}\n"
-        "      • <skill 폴더>/.env  (예: ~/claude/korean-law-api/.env)\n"
-        "      • ~/.law_api.env\n"
-        "      • ~/.config/korean-law-api/.env\n"
-        "      • $LAW_API_DOTENV 로 직접 경로 지정도 가능\n"
-        "  (파일 형식: 'LAW_GO_KR_OC=값' 또는 'export LAW_GO_KR_OC=\"값\"', '#' 주석 허용)\n"
+        "ERROR: OC(인증키)를 찾지 못했습니다. 'LAW_GO_KR_OC=<your_id>' 한 줄짜리 키 파일을 다음 중 한 곳에 두세요.\n"
+        "  • 작업 폴더(또는 그 상위 폴더)의 .law_api.env  ← Cowork 등 샌드박스 VM은 이것을 권장\n"
+        "  • ~/.config/korean-law-api/.env 또는 ~/.law_api.env\n"
+        "  • 임의 경로 + 환경변수 LAW_API_DOTENV=<경로>\n"
+        f"  (현재 작업 폴더: {os.getcwd()})\n"
+        "  키 값을 명령줄(--oc, LAW_GO_KR_OC=…)·echo·cat으로 드러내지 마세요 — 세션 기록에 남습니다.\n"
     )
-    if loaded_path:
-        sys.stderr.write(f"NOTE: .env는 발견했으나 LAW_GO_KR_OC 키가 없습니다: {loaded_path}\n")
     sys.exit(2)
 
 
@@ -441,7 +510,7 @@ def build_url(base: str, params: dict[str, str]) -> str:
 
 
 def http_get(url: str, timeout: int = 20, no_cache: bool = False,
-             strict_errors: bool = False) -> str:
+             strict_errors: bool = False, fmt: str = "XML") -> str:
     """HTTP GET. UTF-8 디코딩 실패 시 EUC-KR 폴백.
 
     캐시(TTL 24h)를 http_get 계층에서 처리한다 — lawSearch.do·lawService.do 공통.
@@ -450,10 +519,12 @@ def http_get(url: str, timeout: int = 20, no_cache: bool = False,
     strict_errors=True면 HTML 오류 페이지(OC 미등록 등)나 API 오류 필드(resultCode≠00)를
     감지해 명확한 메시지와 함께 비정상 종료한다. 응답 본문을 스스로 파싱·검사하는
     내부 호출부(_search_pages 등)는 False로 두어 관대하게 처리한다.
+    fmt='HTML'(사용자가 HTML을 요청)이면 HTML 본문을 오류로 보지 않고, 오류 페이지와 구별할 수 없으므로 캐시하지 않는다.
     """
+    html = fmt.upper() == "HTML"
     # 1) 캐시 조회
     if not no_cache:
-        cached = _cache_read(url)
+        cached = None if html else _cache_read(url)
         if cached is not None:
             sys.stderr.write(f"CACHE: hit {_strip_oc_from_url(url)}\n")
             if strict_errors:
@@ -490,19 +561,29 @@ def http_get(url: str, timeout: int = 20, no_cache: bool = False,
 
     # 3) 오류 검사 (엄격 모드) — 오류면 캐시하지 않고 종료
     if strict_errors:
-        _enforce_response_ok(body, url)
+        _enforce_response_ok(body, url, html_ok=html)
 
-    # 4) 성공 응답만 캐시 — HTTP 200 & HTML 오류 페이지 아님 & API 오류 필드 없음.
+    # 4) 성공 응답만 캐시 — HTTP 200 & HTML 오류 페이지 아님 & API 오류 필드 없음 & '일치 없음' 아님.
     #    (비-strict 내부 순회에서 resultCode≠00 XML을 24h 캐시하는 것을 방지)
-    if not no_cache and not looks_like_html_error(body) and find_api_error(body) is None:
+    if (not no_cache and not html and not looks_like_html_error(body) and find_api_error(body) is None
+            and _find_not_found(body) is None):
         _cache_write(url, _mask_oc_in_body(body, url))
 
     return body
 
 
-def _enforce_response_ok(body: str, url: str) -> None:
-    """HTML 오류 페이지 또는 API 오류 필드를 감지하면 안내와 함께 비정상 종료."""
-    if looks_like_html_error(body):
+def _enforce_response_ok(body: str, url: str, html_ok: bool = False) -> None:
+    """HTML 오류 페이지·API 오류 필드·'일치 없음' 응답을 감지하면 안내와 함께 비정상 종료."""
+    nf = _find_not_found(body)
+    if nf:
+        sys.stderr.write(
+            f"ERROR: 조회 결과 없음 — API 응답: \"{nf}\"\n"
+            f"  URL(OC 제외): {_strip_oc_from_url(url)}\n"
+            "  → 식별자를 search로 다시 확인하세요. 행정규칙 --id는 긴 <행정규칙일련번호>, "
+            "자치법규 --mst는 <자치법규일련번호>, --lm은 약칭이 아닌 정식 명칭(띄어쓰기 무관)이어야 합니다.\n"
+        )
+        sys.exit(2)
+    if not html_ok and looks_like_html_error(body):
         sys.stderr.write(
             "ERROR: API가 XML/JSON이 아닌 HTML 페이지를 반환했습니다 — "
             "OC(인증키) 미등록·오타, 일일 호출 한도 초과, 또는 파라미터 조합 오류일 수 있습니다.\n"
@@ -579,15 +660,147 @@ def cmd_search(args: argparse.Namespace) -> None:
 
     url = build_url(BASE_SEARCH, params)
     if args.dry_run:
-        print(url)
+        print(_display_url(url))
         return
 
-    body = http_get(url, no_cache=args.no_cache, strict_errors=True)
+    body = http_get(url, no_cache=args.no_cache, strict_errors=True, fmt=args.type)
+    _emit(body, url, args, None if args.raw else (lambda b: _search_table(b, args.target)))
+
+
+def _emit(body: str, url: str, args: argparse.Namespace, render=None) -> None:
+    """응답 출력·저장 공통 경로 — 본문에 echo된 OC(상세링크 등)를 가린 뒤 내보낸다.
+
+    render가 있으면(search 표·get --text) 화면에는 그 결과를, --save-to 파일에는 원시 응답을 쓴다
+    (download --from-search-xml 등 원시 XML을 읽는 경로와의 호환).
+    """
+    body = _mask_oc_in_body(body, url)
     output = maybe_pretty(body, args.type) if args.pretty else body
-    print(output)
+    shown = None
+    if render is not None:
+        if args.type.upper() != "XML":
+            sys.stderr.write(f"NOTE: 표·평문 출력은 XML 응답에서만 합니다 — type={args.type} 원문을 출력합니다.\n")
+        else:
+            shown = render(body)
+            if shown is None:
+                sys.stderr.write("NOTE: 응답을 해석하지 못해 원문을 그대로 출력합니다.\n")
+    print(shown if shown is not None else output)
     if args.save_to:
         with open(args.save_to, "w", encoding="utf-8") as f:
             f.write(output)
+
+
+# ---------------------------------------------------------------------------
+# 출력 축약 — search 표(기본), get·get-asof --text
+# ---------------------------------------------------------------------------
+
+# search 표의 열 = 응답 태그 이름 그대로(SKILL·api_reference의 필드명과 같다). 모든 행이 빈 열은 뺀다.
+SEARCH_COLUMNS: dict[str, tuple[str, ...]] = {
+    "law": ("법령명한글", "법령약칭명", "법령구분명", "법령ID", "법령일련번호", "시행일자", "공포일자", "공포번호",
+            "제개정구분명", "현행연혁코드", "소관부처명"),
+    "admrul": ("행정규칙명", "행정규칙종류", "행정규칙일련번호", "행정규칙ID", "시행일자", "발령일자", "발령번호",
+               "제개정구분명", "현행연혁구분", "소관부처명"),
+    "admrulOldAndNew": ("신구법명", "법령구분명", "신구법일련번호", "신구법ID", "시행일자", "발령일자", "발령번호",
+                        "제개정구분명", "현행연혁코드", "소관부처명"),
+    "ordin": ("자치법규명", "자치법규종류", "자치법규일련번호", "자치법규ID", "시행일자", "공포일자", "공포번호",
+              "제개정구분명", "지자체기관명"),
+    "expc": ("안건번호", "안건명", "법령해석례일련번호", "질의기관명", "회신기관명", "회신일자"),
+    "licbyl": ("별표명", "별표종류", "별표번호", "관련법령명", "관련법령ID", "별표일련번호", "공포일자",
+               "별표서식파일링크", "별표서식PDF파일링크"),
+    "admbyl": ("별표명", "별표종류", "별표번호", "관련행정규칙명", "관련행정규칙일련번호", "별표일련번호",
+               "발령일자", "별표서식파일링크"),
+    "ordinbyl": ("별표명", "별표종류", "별표번호", "관련자치법규명", "지자체기관명", "관련자치법규일련번호",
+                 "별표일련번호", "자치법규시행일자", "별표서식파일링크"),
+}
+SEARCH_COLUMNS["eflaw"] = SEARCH_COLUMNS["law"]
+
+
+def _xml_root(body: str):
+    try:
+        return ET.fromstring(body[body.find("<"):]) if "<" in body else None
+    except ET.ParseError:
+        return None
+
+
+def _cell(text: str | None) -> str:
+    """표·평문용 한 줄 값 — 태그(검색어 강조 <strong> 등) 제거, 공백 정리, 열 구분자 치환."""
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", text or "")).strip().replace("|", "¦")
+
+
+def _search_table(body: str, target: str) -> str | None:
+    """검색 응답 XML → 머리 한 줄(건수·쪽) + 표. 해석할 수 없으면 None(원문 출력)."""
+    root = _xml_root(body)
+    if root is None:
+        return None
+    items = [c for c in root if len(c)]
+    meta = {c.tag: (c.text or "").strip() for c in root if not len(c)}
+    cols = SEARCH_COLUMNS.get(target) or tuple(dict.fromkeys(
+        e.tag for it in items for e in it if not e.tag.endswith("상세링크")))
+    rows = [[_cell(it.findtext(c)) for c in cols] for it in items]
+    for r in rows:                              # 자치법규 별표 링크의 긴 파일명 파라미터는 다운로드에 필요 없다(실측)
+        for i, c in enumerate(cols):
+            if c.endswith("링크"):
+                r[i] = re.sub(r"&flNm=[^&]*", "", r[i])
+    keep = [i for i in range(len(cols)) if any(r[i] for r in rows)]
+    total, page = meta.get("totalCnt", "?"), meta.get("page", "1")
+    head = f"# {target} '{meta.get('키워드', '')}' — totalCnt {total}, page {page}, {len(items)}건"
+    try:
+        per = int(meta.get("numOfRows") or len(items) or 1)
+        if int(total) > (int(page) - 1) * per + len(items):
+            head += f" (다음 쪽: --page {int(page) + 1})"
+    except ValueError:
+        pass
+    lines = [head]
+    if items:
+        lines.append(" | ".join(cols[i] for i in keep))
+        lines += [" | ".join(r[i] for i in keep) for r in rows]
+    return "\n".join(lines)
+
+
+def _body_text(body: str) -> str | None:
+    """본문 XML → 평문(기본정보 한 줄 + 조문 텍스트). 부칙·별표·연락처 등은 뺀다. 해석할 수 없으면 None."""
+    root = _xml_root(body)
+    if root is None:
+        return None
+    out: list[str] = []
+
+    def info_line(block: str, fields: tuple[tuple[str, str], ...]) -> str:
+        b = root.find(block)
+        vals = [(fmt, _cell(b.findtext(tag)) if b is not None else "") for fmt, tag in fields]
+        return " · ".join(fmt.format(v) for fmt, v in vals if v)
+
+    if root.tag == "법령":                                         # law·eflaw
+        out.append(info_line("기본정보", (("{}", "법령명_한글"), ("{}", "법종구분"), ("법령ID {}", "법령ID"),
+                                          ("시행 {}", "시행일자"), ("공포 {}", "공포일자"), ("제{}호", "공포번호"),
+                                          ("{}", "제개정구분"), ("{}", "소관부처"))))
+        for u in root.iter("조문단위"):
+            main = (u.findtext("조문내용") or "").strip()
+            if u.findtext("조문여부") != "조문":                    # 편·장·절 제목
+                if main:
+                    out.append("\n" + main)
+                continue
+            out.append("\n" + main)
+            for e in u.iter():
+                if e.tag in ("항내용", "호내용", "목내용") and (e.text or "").strip():
+                    out.append({"항내용": "", "호내용": "  ", "목내용": "    "}[e.tag] + e.text.strip())
+    elif root.tag == "AdmRulService":                              # admrul
+        out.append(info_line("행정규칙기본정보", (("{}", "행정규칙명"), ("{}", "행정규칙종류"),
+                                                  ("일련번호 {}", "행정규칙일련번호"), ("계통ID {}", "행정규칙ID"),
+                                                  ("시행 {}", "시행일자"), ("발령 {}", "발령일자"), ("제{}호", "발령번호"),
+                                                  ("{}", "소관부처명"), ("현행여부 {}", "현행여부"))))
+        out += ["\n" + (e.text or "").strip() for e in root.findall("조문내용") if (e.text or "").strip()]
+    elif root.tag == "LawService":                                 # ordin
+        out.append(info_line("자치법규기본정보", (("{}", "자치법규명"), ("{}", "지자체기관명"),
+                                                  ("MST {}", "자치법규일련번호"), ("계통ID {}", "자치법규ID"),
+                                                  ("시행 {}", "시행일자"), ("공포 {}", "공포일자"), ("제{}호", "공포번호"),
+                                                  ("{}", "제개정정보"))))
+        out += ["\n" + (e.text or "").strip() for e in root.iter("조내용") if (e.text or "").strip()]
+    else:                                                          # 해석례 등 — 짧은 값은 한 줄, 긴 값은 단락
+        for e in root.iter():
+            t = (e.text or "").strip()
+            if e is root or len(e) or not t or e.tag.endswith(("링크", "코드")):
+                continue
+            out.append(f"{e.tag}: {t}" if len(t) <= 80 and "\n" not in t else f"\n[{e.tag}]\n{t}")
+    return "\n".join(out).strip()
 
 
 # ---------------------------------------------------------------------------
@@ -607,20 +820,24 @@ def cmd_get(args: argparse.Namespace) -> None:
         sys.exit(2)
 
     # target별 필요한 식별자 검증
-    # - law:    MST(=법령일련번호) 또는 ID(=법령ID) 또는 LM
+    # - law:    MST(=법령일련번호) 또는 ID(=법령ID) 또는 LM — 공포일 기준 본문
+    # - eflaw:  ID(=법령ID) 또는 LM → 현행 시행본 / MST+efYd → 특정 시행 버전
     # - admrul: ID(=행정규칙일련번호, 긴 숫자) 또는 LID 또는 LM
     # - ordin:  MST(=자치법규일련번호) 또는 ID(=자치법규ID) 또는 LM
     # - expc:   ID(=법령해석례일련번호) 또는 LM(=안건명)
     if args.target == "eflaw":
-        if args.id:
+        if args.id or args.lm:
+            if args.efyd:
+                # ID·LM은 현행 시행본을 준다(공식 가이드). ID+efYd 조합은 서버가 HTTP 500을 낸다(실측).
+                sys.stderr.write(
+                    "NOTE (target=eflaw): --id/--lm은 현행 시행본을 조회하므로 --efyd를 무시합니다. "
+                    "과거 시행본은 get-asof 또는 --mst <버전 MST> --efyd <시행일자>.\n"
+                )
+                args.efyd = None
+        elif not (args.mst and args.efyd):
             sys.stderr.write(
-                "ERROR (target=eflaw): 본문 조회에 ID(법령ID)를 쓰면 현행본이 반환되고 efYd가 무시됩니다(공식 가이드).\n"
-                "  과거 시행본은 --mst <버전 MST> --efyd <그 버전의 시행일자> 로 조회하세요.\n"
-            )
-            sys.exit(2)
-        if not (args.mst and args.efyd):
-            sys.stderr.write(
-                "ERROR (target=eflaw): --mst(버전 MST)와 --efyd(그 버전의 시행일자)가 모두 필요합니다.\n"
+                "ERROR (target=eflaw): 현행 시행본은 --id <법령ID> 또는 --lm <정식 법령명>, "
+                "특정 시행 버전은 --mst <버전 MST> --efyd <그 버전의 시행일자>가 필요합니다.\n"
                 "  버전 목록은 'versions --lid <법령ID>' 명령으로 확인하세요.\n"
             )
             sys.exit(2)
@@ -671,7 +888,11 @@ def cmd_get(args: argparse.Namespace) -> None:
         params["LID"] = args.lid
     if args.lm:
         params["LM"] = args.lm
-    if args.jo:
+    if args.jo:                     # 조회 전에 검증 — 해석 불가 입력이면 본문(최대 수십만 자)을 받기 전에 끝낸다
+        encode_jo(args.jo)
+        _jo_note(args.jo)
+    # 행정규칙·자치법규는 API가 JO를 받지 않는다(보내도 전문 반환) — 스크립트가 받은 뒤 발췌한다.
+    if args.jo and args.target in API_JO_TARGETS:
         params["JO"] = encode_jo(args.jo)
     if args.efyd:
         params["efYd"] = args.efyd
@@ -682,46 +903,184 @@ def cmd_get(args: argparse.Namespace) -> None:
 
     url = build_url(BASE_SERVICE, params)
     if args.dry_run:
-        print(url)
+        print(_display_url(url))
         return
 
-    body = _get_body_with_jo_fallback(args, params, url)
-    output = maybe_pretty(body, args.type) if args.pretty else body
-    print(output)
-    if args.save_to:
-        with open(args.save_to, "w", encoding="utf-8") as f:
-            f.write(output)
+    law_xml = args.target == "law" and args.type.upper() in ("XML", "JSON")
+    # law는 조문이 비어도 곧바로 끝내지 않는다 — 미시행 개정이 조문을 옮기거나 지운 경우 시행본에는 있을 수 있다.
+    body, url = _fetch_with_jo(args.target, params, args.jo, args.type, args.no_cache,
+                               exit_on_missing=not law_xml)
+
+    if law_xml:
+        pending = _pending_info(body)
+        if pending and not args.promulgated:
+            in_promulgated = not (args.jo and args.type.upper() == "XML" and _jo_result_empty(body))
+            body, url = _law_to_effective(body, url, oc, args, pending, in_promulgated)
+        else:
+            if pending:
+                sys.stderr.write(f"⚠ 공포본 출력(--promulgated) — 아직 시행되지 않은 내용 포함: {pending}.\n")
+            if args.jo and args.type.upper() == "XML" and _jo_result_empty(body):
+                _jo_missing_exit(args.jo, params.get("JO"), "")
+    elif args.target == "law":
+        sys.stderr.write("NOTE: type=HTML은 미시행 내용 포함 여부를 판별하지 않습니다 — 현행 인용은 XML/JSON 또는 target=eflaw.\n")
+
+    if args.jo and args.target in LOCAL_JO_TARGETS:
+        body = _extract_articles(body, args.target, args.jo, args.type)
+
+    _emit(body, url, args, _body_text if args.text else None)
 
 
-def _get_body_with_jo_fallback(args: argparse.Namespace, params: dict[str, str],
-                               url: str) -> str:
-    """본문 조회 + JO 자동 폴백.
-
-    법령(law) 본문에서 JO를 지정했는데 결과가 비면(조문 컨테이너 부재), 대체 인코딩으로
-    1회 자동 재시도한다(예: 039000 → 0390). type=XML일 때만 판정 가능하므로 그 경우에만
-    폴백한다. 재시도 시 stderr로 알린다.
-    """
-    body = http_get(url, no_cache=args.no_cache, strict_errors=True)
-    can_fallback = (
-        args.jo and args.target == "law" and args.type.upper() == "XML"
+def _law_to_effective(body: str, url: str, oc: str, args: argparse.Namespace,
+                      pending: str, in_promulgated: bool = True) -> tuple[str, str]:
+    """공포일 기준 본문에 미시행 내용이 있을 때 시행일 기준 현행본(eflaw ID=법령ID)으로 바꿔 받는다."""
+    law_id = _first_tag_value(body, "법령ID")
+    if not law_id:
+        sys.stderr.write(f"⚠ 아직 시행되지 않은 내용 포함({pending}) — 법령ID를 찾지 못해 공포본을 그대로 출력합니다.\n")
+        return body, url
+    sys.stderr.write(
+        f"⚠ 공포일 기준 본문(target=law)에 아직 시행되지 않은 내용이 있습니다 — {pending}.\n"
+        f"  → 시행일 기준 현행본(target=eflaw, 법령ID {law_id})으로 대체해 출력합니다. "
+        "공포본 그대로가 필요하면 --promulgated.\n"
     )
-    if can_fallback and _jo_result_empty(body):
-        alt = alt_encode_jo(args.jo)
-        if alt and alt != params.get("JO"):
-            sys.stderr.write(
-                f"NOTE: JO={params.get('JO')} 결과가 비어 대체 인코딩 JO={alt}로 자동 재시도합니다.\n"
-            )
-            retry_params = dict(params)
-            retry_params["JO"] = alt
-            retry_url = build_url(BASE_SERVICE, retry_params)
-            retry_body = http_get(retry_url, no_cache=args.no_cache, strict_errors=True)
-            if not _jo_result_empty(retry_body):
-                return retry_body
-            sys.stderr.write(
-                "NOTE: 대체 인코딩으로도 해당 조문을 찾지 못했습니다 — "
-                "조문번호를 확인하거나 JO 없이 전체 본문을 받아 발췌하세요.\n"
-            )
-    return body
+    eparams = {"OC": oc, "target": "eflaw", "type": args.type, "ID": law_id}
+    if args.jo:
+        eparams["JO"] = encode_jo(args.jo)
+    eurl = build_url(BASE_SERVICE, eparams)
+    probe = http_get(eurl, no_cache=args.no_cache, strict_errors=False, fmt=args.type)
+    if _find_not_found(probe):
+        head = _first_tag_value(body, "시행일자")
+        sys.stderr.write(
+            f"ERROR: 현행 시행본이 없습니다 — 아직 시행 전인 법령입니다(시행일 {head}). "
+            "공포본은 --promulgated로 받고, 인용 시 시행 예정임을 밝히세요.\n")
+        sys.exit(2)
+    _enforce_response_ok(probe, eurl)
+    if not (args.jo and args.type.upper() == "XML" and _jo_result_empty(probe)):
+        return probe, eurl
+    hint = ("현행 시행본에 이 조문이 없습니다 — 공포됐으나 아직 시행되지 않은 신설 조문일 수 있습니다"
+            "(공포본 확인: --promulgated)." if in_promulgated
+            else "공포본·시행본 모두에 없는 조문입니다 — 조문번호를 확인하세요.")
+    return _fetch_with_jo("eflaw", eparams, args.jo, args.type, args.no_cache, missing_hint=hint)
+
+
+# API가 JO 파라미터를 지원하는 target / 스크립트가 본문에서 조를 발췌하는 target
+API_JO_TARGETS = {"law", "eflaw"}
+LOCAL_JO_TARGETS = {"admrul", "ordin"}
+
+
+def _fetch_with_jo(target: str, params: dict[str, str], jo: str | None, fmt: str,
+                   no_cache: bool, missing_hint: str = "",
+                   exit_on_missing: bool = True) -> tuple[str, str]:
+    """본문 조회 + JO 자동 폴백. (본문, 최종 URL)을 반환한다.
+
+    법령(law/eflaw) 본문에서 JO를 지정했는데 결과가 비면(조문 컨테이너 부재), 대체 인코딩으로
+    1회 자동 재시도한다(예: 039000 → 0390). type=XML일 때만 판정 가능하므로 그 경우에만
+    폴백한다. 그래도 비면 exit_on_missing이면 조문 없음으로 exit 2, 아니면 빈 본문을 돌려준다.
+    """
+    url = build_url(BASE_SERVICE, params)
+    body = http_get(url, no_cache=no_cache, strict_errors=True, fmt=fmt)
+    if not (jo and target in API_JO_TARGETS and fmt.upper() == "XML" and _jo_result_empty(body)):
+        return body, url
+    alt = alt_encode_jo(jo)
+    if alt and alt != params.get("JO"):
+        sys.stderr.write(
+            f"NOTE: JO={params.get('JO')} 결과가 비어 대체 인코딩 JO={alt}로 자동 재시도합니다.\n"
+        )
+        retry_params = dict(params)
+        retry_params["JO"] = alt
+        retry_url = build_url(BASE_SERVICE, retry_params)
+        retry_body = http_get(retry_url, no_cache=no_cache, strict_errors=True, fmt=fmt)
+        if not _jo_result_empty(retry_body):
+            return retry_body, retry_url
+    if not exit_on_missing:
+        return body, url
+    _jo_missing_exit(jo, params.get("JO"), missing_hint)
+    return body, url  # unreachable
+
+
+def _jo_missing_exit(jo: str, code: str | None, hint: str) -> None:
+    sys.stderr.write(
+        f"ERROR: 조문 {jo}을(를) 찾지 못했습니다(JO={code}). "
+        + (hint or "조문번호·가지조 표기('제10조의2')를 확인하세요.") + "\n"
+    )
+    sys.exit(2)
+
+
+def _first_tag_value(body: str, tag: str) -> str:
+    """XML·JSON 본문에서 tag의 첫 값(CDATA 포함)을 찾아 반환. 없으면 ''."""
+    m = re.search(rf"<{tag}>\s*(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?\s*</{tag}>", body, re.DOTALL)
+    if m:
+        return m.group(1).strip()
+    m = re.search(rf'"{tag}"\s*:\s*"([^"]*)"', body)
+    return m.group(1).strip() if m else ""
+
+
+def _pending_info(body: str, today: str | None = None) -> str:
+    """공포일 기준 법령 본문에 기준일(기본: 오늘) 현재 미시행 내용이 있으면 요약 문자열, 없으면 ''.
+
+    - 기본정보 <시행일자>가 오늘보다 뒤: 본문 전체가 시행 전 공포본(예: 전자금융거래법 MST 280277,
+      검색 행은 '20251216 현행'인데 본문 시행일자 20261217).
+    - <조문시행일자문자열>에 오늘보다 뒤인 날짜: 일부 조항만 시행 전
+      (예: 개인정보 보호법 '20270701:제32조의2제1항 단서,제75조제2항제15호').
+    """
+    today = today or _today()
+    parts: list[str] = []
+    head = _first_tag_value(body, "시행일자")
+    if len(head) == 8 and head.isdigit() and head > today:
+        parts.append(f"본문 시행일자 {head}")
+    for tag, what in (("조문시행일자문자열", ""), ("별표시행일자문자열", "별표 ")):
+        jstr = _first_tag_value(body, tag)
+        for m in re.finditer(r"(\d{8})\s*:\s*(.*?)(?=\s*[/;|]?\s*\d{8}\s*:|$)", jstr, re.DOTALL):
+            if m.group(1) > today:
+                parts.append(f"{m.group(1)} 시행: {what}{m.group(2).strip().rstrip(',;/')}")
+    return "; ".join(parts)
+
+
+def _jo_pattern(jo: str) -> tuple[int, int]:
+    """조문번호 입력 → (조, 가지조). encode_jo의 6자리 결과를 해석한다."""
+    code = encode_jo(jo)
+    if not (len(code) == 6 and code.isdigit()):
+        sys.stderr.write(f"ERROR: 조문번호 '{jo}'를 해석할 수 없습니다(예: 7, 제7조, 제10조의2).\n")
+        sys.exit(2)
+    return int(code[:4]), int(code[4:])
+
+
+def _extract_articles(body: str, target: str, jo: str, fmt: str) -> str:
+    """행정규칙·자치법규 본문에서 지정한 조만 남긴다(XML 원문을 잘라 CDATA 보존).
+
+    API는 두 target에서 JO를 받지 않아 --jo를 주어도 전문(수만~수십만 자)을 돌려준다.
+      - admrul: <조문내용><![CDATA[제7조(…)…]]></조문내용> 이 평탄하게 반복 → 첫머리 '제N조(의M)' 일치
+      - ordin : <조 조문번호='000700'>…</조> → 조문번호 일치
+    기본정보 블록은 유지한다. 해당 조가 없으면 exit 2.
+    """
+    if fmt.upper() != "XML":
+        sys.stderr.write(f"NOTE: {target}의 --jo 발췌는 XML에서만 동작합니다 — 전문을 출력합니다.\n")
+        return body
+    n, g = _jo_pattern(jo)
+    label = f"제{n}조" + (f"의{g}" if g else "")
+    if target == "admrul":
+        info = re.search(r"<행정규칙기본정보>.*?</행정규칙기본정보>", body, re.DOTALL)
+        head_re = re.compile(rf"^\s*제\s*{n}\s*조" + (rf"\s*의\s*{g}(?!\d)" if g else r"(?!\s*의\s*\d)"))
+        blocks = [m.group(0) for m in re.finditer(r"<조문내용>.*?</조문내용>", body, re.DOTALL)
+                  if head_re.match(_cdata_text(m.group(0), "조문내용"))]
+        root_open, root_close = "<AdmRulService>", "</AdmRulService>"
+    else:
+        info = re.search(r"<자치법규기본정보>.*?</자치법규기본정보>", body, re.DOTALL)
+        code = f"{n:04d}{g:02d}"
+        blocks = [m.group(0) for m in re.finditer(r"<조\s[^>]*>.*?</조>", body, re.DOTALL)
+                  if f"<조문번호>{code}</조문번호>" in m.group(0)]
+        root_open, root_close = "<LawService>", "</LawService>"
+    if not blocks:
+        sys.stderr.write(f"ERROR: 본문에서 {label}을(를) 찾지 못했습니다 — 조문번호를 확인하세요"
+                         "(행정규칙 일부는 조문 형식이 아닙니다).\n")
+        sys.exit(2)
+    sys.stderr.write(f"NOTE: {target} 본문에서 {label}만 발췌했습니다(API는 {target}의 JO를 지원하지 않음).\n")
+    return ('<?xml version="1.0" encoding="UTF-8"?>' + root_open
+            + (info.group(0) if info else "") + "".join(blocks) + root_close)
+
+
+def _cdata_text(block: str, tag: str) -> str:
+    m = re.search(rf"<{tag}>\s*(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?\s*</{tag}>", block, re.DOTALL)
+    return m.group(1) if m else ""
 
 
 # ---------------------------------------------------------------------------
@@ -930,8 +1289,24 @@ def _collect_links_from_xml(xml_text: str) -> list[dict]:
     return items
 
 
+def _default_out_dir() -> str:
+    """download 기본 저장 폴더. 현재 폴더가 스킬 설치 폴더 안이거나 쓰기 불가면 임시 폴더를 쓴다.
+
+    Cowork 등에서는 스킬이 읽기 전용으로 마운트되고, 설치 폴더에 파일을 떨어뜨리면 업데이트 때 사라진다.
+    """
+    cwd = os.path.realpath(os.getcwd())
+    skill_dir = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+    inside_skill = cwd == skill_dir or cwd.startswith(skill_dir + os.sep)
+    if inside_skill or not os.access(cwd, os.W_OK):
+        out = os.path.join(tempfile.gettempdir(), "law_api_byl")
+        sys.stderr.write(f"NOTE: 현재 폴더가 스킬 설치 폴더이거나 쓰기 불가라 {out}에 저장합니다 — "
+                         "작업 폴더에 두려면 --out-dir <작업 폴더>를 주세요.\n")
+        return out
+    return "./byl_downloads"
+
+
 def cmd_download(args: argparse.Namespace) -> None:
-    out_dir = args.out_dir or "./byl_downloads"
+    out_dir = args.out_dir or _default_out_dir()
     os.makedirs(out_dir, exist_ok=True)
 
     # 1) URL 직접 지정 모드
@@ -1018,29 +1393,43 @@ def cmd_download(args: argparse.Namespace) -> None:
     sys.exit(2)
 
 
+_JO_HEAD_RE = re.compile(r"^\s*제?\s*(\d{1,4})\s*조?\s*(?:의\s*(\d{1,2})\s*조?)?")
+_JO_TAIL_RE = re.compile(r"\s*(?:(?:제?\s*\d+\s*(?:항|호))|(?:[가-힣]\s*목))(?:\s*(?:제?\s*\d+\s*(?:항|호)|[가-힣]\s*목))*"
+                         r"\s*(?:본문|단서|전단|후단)?\s*")
+
+
 def encode_jo(raw: str) -> str:
     """
-    조문번호 인코딩.
-    - 사용자가 '제390조'처럼 입력하거나 숫자만 입력해도 6자리 zero-padding 처리.
-    - 가지조는 '제390조의2'·'390의2' 형태를 인식해 조 4자리 + 가지조 2자리(039002)로 인코딩.
-    - 이미 6자리 숫자 형태면 그대로 통과.
-    - 항·호 단위 인코딩(예: 03900100 = 제390조 제1항)은 스크립트에서 추측하지 않고 사용자가 명시한 값을 그대로 보낸다.
+    조문번호 인코딩 — 조 4자리 + 가지조 2자리.
+    - '390', '제390조' → 039000 / '제390조의2', '390의2' → 039002 (가지조를 숫자에 이어붙이지 않는다).
+    - '제7조제1항'처럼 항·호가 붙으면 조까지만 쓴다(항·호는 API가 받지 않음 — _jo_note가 알림).
+    - 숫자만 5자리 이상이면 이미 인코딩된 값으로 보고 그대로 보낸다(공식 JO는 6자리).
+    - 해석할 수 없는 형태('390-2' 등)는 다른 조를 조회하지 않도록 exit 2.
     """
     raw = raw.strip()
-    # 가지조 — 숫자 이어붙이기('제390조의2' → 390200 = 제3902조 슬롯)로 엉뚱한 조문이 되는 것을 방지.
-    m = re.fullmatch(r"제?\s*(\d{1,4})\s*조?\s*의\s*(\d{1,2})\s*조?", raw)
-    if m:
-        return m.group(1).zfill(4) + m.group(2).zfill(2)
-    digits = "".join(ch for ch in raw if ch.isdigit())
-    if not digits:
-        return raw
-    # 6자리 미만이면 0-padding (앞 4자리는 조, 뒤 2자리는 가지조 — 일반적 가지조 0)
-    if len(digits) <= 4:
-        return digits.zfill(4) + "00"
-    if len(digits) == 6:
-        return digits
-    # 6자리 초과는 그대로 (호·항 인코딩 등 사용자가 직접 만든 값으로 간주)
-    return digits
+    if raw.isdigit():
+        return raw.zfill(4) + "00" if len(raw) <= 4 else raw
+    m = _JO_HEAD_RE.match(raw)
+    rest = raw[m.end():] if m else raw
+    # '제1항'·'2호'처럼 '조' 없이 항·호만 쓴 입력을 조 번호로 읽지 않는다.
+    no_jo_mark = bool(m) and "조" not in m.group(0) and "의" not in m.group(0) and rest.strip() != ""
+    if not m or no_jo_mark or (re.search(r"\d", rest) and not _JO_TAIL_RE.fullmatch(rest)):
+        if not re.search(r"\d", raw):
+            return raw
+        sys.stderr.write(
+            f"ERROR: 조문번호 '{raw}'를 해석할 수 없습니다 — '390', '제390조', '제10조의2'처럼 조까지만 쓰세요"
+            "(항·호는 받은 본문에서 확인).\n")
+        sys.exit(2)
+    return f"{int(m.group(1)):04d}{int(m.group(2) or 0):02d}"
+
+
+def _jo_note(raw: str) -> None:
+    """--jo에 항·호가 붙어 있으면 조 전체를 조회한다고 알린다."""
+    if raw.strip().isdigit():
+        return
+    m = _JO_HEAD_RE.match(raw.strip())
+    if m and re.search(r"\d", raw.strip()[m.end():]):
+        sys.stderr.write(f"NOTE: '{raw}'의 항·호 부분은 API가 받지 않아 조 전체를 조회합니다 — 해당 항·호는 본문에서 확인하세요.\n")
 
 
 def alt_encode_jo(raw: str) -> str | None:
@@ -1129,6 +1518,16 @@ def _search_pages(oc: str, target: str, base_params: dict[str, str], max_pages: 
     return items
 
 
+def _mst_num(r: dict) -> int:
+    """MST 정렬 키 — 자릿수가 다른 일련번호(예: 1869 vs 2100000…)가 문자열 비교로 뒤바뀌지 않게 정수화."""
+    s = (r.get("MST") or "").strip()
+    return int(s) if s.isdigit() else -1
+
+
+def _version_key(r: dict) -> tuple[str, int]:
+    return (r.get("시행일자") or "", _mst_num(r))
+
+
 def _dedupe_sort(rows: list[dict]) -> list[dict]:
     """(시행일자, MST) 중복 제거 + 시행일자 내림차순."""
     seen: set = set()
@@ -1139,8 +1538,66 @@ def _dedupe_sort(rows: list[dict]) -> list[dict]:
             continue
         seen.add(k)
         out.append(r)
-    out.sort(key=lambda r: (r.get("시행일자") or "", r.get("MST") or ""), reverse=True)
+    out.sort(key=_version_key, reverse=True)
     return out
+
+
+def _norm_name(s: str) -> str:
+    return re.sub(r"\s+", "", s or "")
+
+
+def _group_lineages(rows: list[dict]) -> dict[str, list[dict]]:
+    """계통ID(법령ID·행정규칙ID·자치법규ID)별로 버전을 묶는다. ID가 없으면 '' 한 묶음."""
+    groups: dict[str, list[dict]] = {}
+    for r in rows:
+        groups.setdefault(r.get("계통ID", ""), []).append(r)
+    return groups
+
+
+def _lineage_table(groups: dict[str, list[dict]]) -> str:
+    lines = ["계통ID | 최신 시행일 | 버전 수 | 최신 명칭 (옛 명칭)"]
+    for lid, rs in sorted(groups.items(), key=lambda kv: max(_version_key(r) for r in kv[1]), reverse=True):
+        latest = max(rs, key=_version_key)
+        olds = sorted({r["명칭"] for r in rs if r.get("명칭") and r["명칭"] != latest["명칭"]})
+        extra = f" (옛 명칭: {', '.join(olds)})" if olds else ""
+        where = f" [{latest['지자체']}]" if latest.get("지자체") else ""
+        lines.append(f"{lid or '-'} | {latest['시행일자']} | {len(rs)} | {latest['명칭']}{where}{extra}")
+    return "\n".join(lines)
+
+
+def _select_lineage(rows: list[dict], target: str, query: str | None, lid: str | None) -> list[dict]:
+    """부분일치 검색 결과에서 한 계통(같은 규정·조례의 버전들)만 남긴다.
+
+    검색은 부분일치라 '전자금융감독규정'에 시행세칙이, '가평군 옥외광고물'에 발전기금 조례가 섞인다.
+    계통을 가리지 않고 max{시행일자 ≤ 기준일}을 고르면 다른 규정의 본문·시행기간·판례식이 나온다.
+      1) --lid(계통ID) 지정 → 그 계통
+      2) 계통이 하나뿐 → 그 계통
+      3) 어느 버전의 명칭이 --query와 정확히 같은(공백 무시) 계통이 하나 → 그 계통(나머지는 NOTE)
+      4) 그 밖에는 계통 목록을 보여주고 exit 2 — --lid로 지정하게 한다.
+    """
+    groups = _group_lineages(rows)
+    if lid:
+        picked = groups.get(lid.strip())
+        if not picked:
+            sys.stderr.write(f"ERROR: 계통ID {lid}의 버전이 검색 결과에 없습니다. 검색된 계통:\n"
+                             + _lineage_table(groups) + "\n")
+            sys.exit(2)
+        return picked
+    if len(groups) <= 1:
+        return rows
+    exact = [k for k, rs in groups.items()
+             if query and any(_norm_name(r.get("명칭", "")) == _norm_name(query) for r in rs)]
+    if len(exact) == 1:
+        others = [k for k in groups if k != exact[0]]
+        sys.stderr.write(
+            f"NOTE: 명칭이 '{query}'와 정확히 일치하는 계통({exact[0]})만 사용합니다 — "
+            f"부분일치로 섞인 다른 계통 {len(others)}개 제외(--lid로 바꿀 수 있음).\n")
+        return groups[exact[0]]
+    sys.stderr.write(
+        f"ERROR: 검색어 '{query}'에 서로 다른 {'규정' if target == 'admrul' else '조례·규칙'} "
+        f"{len(groups)}개 계통이 섞여 있어 하나를 고를 수 없습니다. 아래에서 골라 --lid <계통ID>로 다시 실행하세요.\n"
+        + _lineage_table(groups) + "\n")
+    sys.exit(2)
 
 
 def _law_versions(oc: str, lid: str | None, query: str | None, nw: str) -> list[dict]:
@@ -1168,7 +1625,7 @@ def _law_versions(oc: str, lid: str | None, query: str | None, nw: str) -> list[
             "공포일자": (el.findtext("공포일자") or "").strip(),
             "공포번호": (el.findtext("공포번호") or "").strip(),
             "법령구분": (el.findtext("법령구분명") or "").strip(),
-            "법령ID": (el.findtext("법령ID") or "").strip(),
+            "계통ID": (el.findtext("법령ID") or "").strip(),
         })
     return _dedupe_sort(rows)
 
@@ -1196,10 +1653,12 @@ def _ordin_versions(oc: str, query: str, org: str | None, sborg: str | None) -> 
                 "명칭": (el.findtext("자치법규명") or "").strip(),
                 "시행일자": (el.findtext("시행일자") or "").strip(),
                 "MST": (el.findtext("자치법규일련번호") or "").strip(),
+                "계통ID": (el.findtext("자치법규ID") or "").strip(),
                 "구분": label,
                 "공포일자": (el.findtext("공포일자") or "").strip(),
                 "공포번호": (el.findtext("공포번호") or "").strip(),
                 "지자체": (el.findtext("지자체기관명") or "").strip(),
+                "법령구분": (el.findtext("자치법규종류") or "").strip(),
             })
     return _dedupe_sort(rows)
 
@@ -1222,10 +1681,12 @@ def _admrul_versions_nw(oc: str, query: str, org: str | None = None) -> list[dic
                 "명칭": (el.findtext("행정규칙명") or "").strip(),
                 "시행일자": (el.findtext("시행일자") or "").strip(),
                 "MST": (el.findtext("행정규칙일련번호") or "").strip(),
+                "계통ID": (el.findtext("행정규칙ID") or "").strip(),
                 "구분": (el.findtext("현행연혁구분") or "").strip() or "연혁",
                 "공포일자": (el.findtext("발령일자") or "").strip(),
                 "공포번호": (el.findtext("발령번호") or "").strip(),
                 "법령구분": (el.findtext("행정규칙종류") or "").strip(),
+                "소관부처": (el.findtext("소관부처명") or "").strip(),
             })
     return _dedupe_sort(rows)
 
@@ -1235,6 +1696,9 @@ def _admrul_bi_row(bi) -> dict:
         "명칭": (bi.findtext("행정규칙명") or "").strip(),
         "시행일자": (bi.findtext("시행일자") or "").strip(),
         "MST": (bi.findtext("행정규칙일련번호") or "").strip(),
+        "계통ID": (bi.findtext("행정규칙ID") or "").strip(),
+        "법령구분": (bi.findtext("행정규칙종류") or "").strip(),
+        "소관부처": (bi.findtext("소관부처명") or "").strip(),
         "구분": "현행" if (bi.findtext("현행여부") or "").strip() == "Y" else "연혁",
         "공포일자": (bi.findtext("발령일자") or "").strip(),
         "공포번호": (bi.findtext("발령번호") or "").strip(),
@@ -1252,6 +1716,11 @@ def _admrul_versions(oc: str, start_id: str, date: str | None = None, max_steps:
     rows: list[dict] = []
     cur = (start_id or "").strip()
     steps = 0
+    # 신구법비교의 구·신조문 기본정보에는 소관부처명·행정규칙종류가 없다 — 판례식 표기용으로 본문에서 한 번 받는다.
+    info_body = http_get(build_url(BASE_SERVICE, {"OC": oc, "target": "admrul", "type": "XML", "ID": cur}),
+                         no_cache=_NO_CACHE) if cur else ""
+    org = _first_tag_value(info_body, "소관부처명")
+    kind = _first_tag_value(info_body, "행정규칙종류")
     while cur and steps < max_steps:
         body = http_get(build_url(BASE_SERVICE, {
             "OC": oc, "target": "admrulOldAndNew", "type": "XML", "ID": cur}),
@@ -1279,10 +1748,18 @@ def _admrul_versions(oc: str, start_id: str, date: str | None = None, max_steps:
     if steps >= max_steps:
         sys.stderr.write(
             f"NOTE: 체인 추적이 상한({max_steps}단계)에 도달했습니다. 더 과거가 필요하면 --max-steps를 늘리세요.\n")
+    for r in rows:
+        r["소관부처"] = r.get("소관부처") or org
+        r["법령구분"] = r.get("법령구분") or kind
     return _dedupe_sort(rows)
 
 
 def _collect_versions(args: argparse.Namespace, oc: str, date: str | None = None) -> list[dict]:
+    if args.target in ("ordin", "admrul") and args.lid and not (args.query or args.id):
+        sys.stderr.write(
+            f"ERROR: target={args.target}의 --lid(계통ID)는 --query 검색 결과를 한정하는 용도입니다 — "
+            "--query(규정·조례명)도 함께 주세요.\n")
+        sys.exit(2)
     if args.target == "ordin":
         return _ordin_versions(oc, args.query, args.org, args.sborg)
     if args.target == "admrul":
@@ -1299,8 +1776,8 @@ def _collect_versions(args: argparse.Namespace, oc: str, date: str | None = None
 def cmd_versions(args: argparse.Namespace) -> None:
     oc = resolve_oc(args.oc)
     if args.dry_run:
-        base = {"OC": oc, "target": "eflaw" if args.target == "law" else "ordin",
-                "type": "XML", "display": "100", "page": "1"}
+        search_target = {"law": "eflaw"}.get(args.target, args.target)
+        base = {"OC": oc, "target": search_target, "type": "XML", "display": "100", "page": "1"}
         if args.target == "law":
             base["nw"] = args.nw or "1,3"
             if args.lid:
@@ -1309,39 +1786,95 @@ def cmd_versions(args: argparse.Namespace) -> None:
                 base["query"] = args.query
         else:
             base["query"] = args.query or ""
-        print(build_url(BASE_SEARCH, base))
+            base["nw"] = "2"   # 현행(nw 생략)과 연혁(nw=2) 두 번 검색 중 연혁 쪽 예시
+        print(_display_url(build_url(BASE_SEARCH, base)))
         return
     rows = _collect_versions(args, oc)
     if args.target == "admrul" and rows and not args.query:
         sys.stderr.write("NOTE: 신구법비교 체인 역추적 결과입니다(한 단계 = API 1회). 통상은 --query(연혁 직접 검색)를 권장.\n")
+    groups = _group_lineages(rows)
+    if args.target in ("ordin", "admrul") and args.lid:
+        rows = groups.get(args.lid.strip(), [])
+    elif len(groups) > 1:
+        sys.stderr.write(
+            f"NOTE: 서로 다른 계통 {len(groups)}개가 섞여 있습니다(부분일치 검색). get-asof는 명칭이 검색어와 정확히 같은 "
+            "계통을 고르거나, 없으면 --lid <계통ID>를 요구합니다.\n" + _lineage_table(groups) + "\n")
     if args.json:
         print(json.dumps(rows, ensure_ascii=False, indent=2))
         return
     print(f"# {args.target} 버전 {len(rows)}건 — 시행일자 내림차순, (시행일자, MST) 중복 제거")
-    print("시행일자 | MST | 구분 | 공포일자 | 공포번호 | 명칭")
+    print("시행일자 | MST | 계통ID | 구분 | 공포일자 | 공포번호 | 명칭")
     for r in rows:
         extra = f" ({r['지자체']})" if r.get("지자체") else ""
-        print(f"{r['시행일자']} | {r['MST']} | {r['구분']} | {r['공포일자']} | {r['공포번호']} | {r['명칭']}{extra}")
+        print(f"{r['시행일자']} | {r['MST']} | {r.get('계통ID', '')} | {r['구분']} | {r['공포일자']} | "
+              f"{r['공포번호']} | {r['명칭']}{extra}")
     if not rows:
         sys.stderr.write("NOTE: 0건 — target=law면 --lid 사용을, 명칭 변경(조례)·법령명 표기를 확인하세요.\n")
 
 
+def _parse_date(raw: str | None) -> str:
+    """기준일 → YYYYMMDD. '20190601', '2019-06-01', '2019. 6. 1.'을 받는다(월·일 0 채움).
+
+    자릿수를 채우지 않고 숫자만 이어붙이면 '2020. 6. 1.' → '202061'이 되어, 문자열 비교로 버전을 고를 때
+    엉뚱한(기준일보다 뒤의) 시행본이 선택된다.
+    """
+    groups = re.findall(r"\d+", raw or "")
+    if len(groups) == 1 and len(groups[0]) == 8:
+        date = groups[0]
+    elif len(groups) == 3 and len(groups[0]) == 4 and all(1 <= len(g) <= 2 for g in groups[1:]):
+        date = f"{groups[0]}{int(groups[1]):02d}{int(groups[2]):02d}"
+    else:
+        date = ""
+    try:
+        datetime.strptime(date, "%Y%m%d")
+    except ValueError:
+        sys.stderr.write(f"ERROR: --date는 실제 날짜여야 합니다(예: 20190601, 2019-06-01, '2019. 6. 1.'): {raw!r}\n")
+        sys.exit(2)
+    return date
+
+
+def _promulgation_label(r: dict, target: str) -> str:
+    """판례식 괄호의 법규 종류 표기 — law.go.kr 표시 형식을 따른다.
+
+    법령: '법률'·'대통령령' 등(법령구분명) / 행정규칙: '금융위원회고시'(소관부처명+종류) /
+    자치법규: '경기도가평군조례'(지자체기관명 공백 제거+종류).
+    """
+    kind = (r.get("법령구분") or "").strip()
+    if target == "admrul":
+        return f"{(r.get('소관부처') or '').replace(' ', '')}{kind or '고시'}"
+    if target == "ordin":
+        return f"{(r.get('지자체') or '').replace(' ', '')}{kind or '조례'}"
+    return kind or "법률"
+
+
+def _precedent_phrase(pick: dict, nxt: dict, target: str) -> tuple[str, str]:
+    """(헤더 한 줄, 판례식) — 직후 버전이 같은 개정의 나머지 시행분이면 '개정되어 … 시행되기 전의 것'."""
+    promulgation = f"{_dot_date(nxt['공포일자'])} {_promulgation_label(nxt, target)} 제{nxt['공포번호']}호"
+    if (nxt.get("공포일자"), nxt.get("공포번호")) == (pick.get("공포일자"), pick.get("공포번호")):
+        phrase = f"구 {pick['명칭']}({promulgation}로 개정되어 {_dot_date(nxt['시행일자'])} 시행되기 전의 것)"
+        head = f"같은 개정({promulgation})의 나머지 부분 시행 (시행 {nxt['시행일자']})"
+        return head, phrase
+    return (f"공포 {promulgation} (시행 {nxt['시행일자']})",
+            f"구 {pick['명칭']}({promulgation}로 개정되기 전의 것)")
+
+
 def cmd_get_asof(args: argparse.Namespace) -> None:
     oc = resolve_oc(args.oc)
-    date = "".join(ch for ch in (args.date or "") if ch.isdigit())
-    if len(date) != 8:
-        sys.stderr.write("ERROR: --date는 YYYYMMDD 8자리(예: 20190601)여야 합니다.\n")
-        sys.exit(2)
+    date = _parse_date(args.date)
+    if args.jo:
+        encode_jo(args.jo)
+        _jo_note(args.jo)
 
     rows = _collect_versions(args, oc, date=date)
     if not rows:
         sys.stderr.write("ERROR: 버전을 찾지 못했습니다 — target=law면 --lid 사용, 명칭·표기를 확인하세요.\n")
         sys.exit(2)
+    lid_filter = args.lid if args.target in ("ordin", "admrul") else None
+    rows = _select_lineage(rows, args.target, args.query, lid_filter)
     names = {r["명칭"] for r in rows if r.get("명칭")}
     if len(names) > 1:
         sys.stderr.write(
-            f"[get-asof] ⚠ 후보에 서로 다른 명칭 {len(names)}종이 섞여 있습니다(개정에 따른 명칭 변경 또는 동명 이종). "
-            "선택본 명칭을 반드시 확인하세요.\n")
+            f"[get-asof] NOTE: 이 계통은 개정으로 명칭이 바뀌었습니다({len(names)}종) — 인용에는 선택본의 명칭을 씁니다.\n")
 
     eligible = [r for r in rows if r["시행일자"] and r["시행일자"] <= date]
     if not eligible:
@@ -1351,14 +1884,15 @@ def cmd_get_asof(args: argparse.Namespace) -> None:
             "  제정 전 시점입니다 — 기준일 또는 법령 특정을 재확인하세요.\n"
         )
         sys.exit(2)
-    pick = max(eligible, key=lambda r: (r["시행일자"], r["MST"]))
+    pick = max(eligible, key=_version_key)
     newer = [r for r in rows if r["시행일자"] > pick["시행일자"]]
-    nxt = min(newer, key=lambda r: (r["시행일자"], r["MST"])) if newer else None
+    nxt = min(newer, key=_version_key) if newer else None
 
     # 선택 결과 헤더 — stderr (stdout은 응답 본문만 유지)
+    lineage = f" | 계통ID {pick['계통ID']}" if pick.get("계통ID") else ""
     sys.stderr.write(
         f"[get-asof] 기준일 {date} → 선택본: {pick['명칭']} | 시행 {pick['시행일자']} | "
-        f"MST {pick['MST']} | {pick['구분']} | 공포 {pick['공포일자']} 제{pick['공포번호']}호\n"
+        f"MST {pick['MST']}{lineage} | {pick['구분']} | 공포 {pick['공포일자']} 제{pick['공포번호']}호\n"
     )
     if pick["구분"] != "현행":
         end = _prev_day(nxt["시행일자"]) if nxt else ""
@@ -1367,11 +1901,13 @@ def cmd_get_asof(args: argparse.Namespace) -> None:
     else:
         sys.stderr.write("[get-asof] 기준일 현재 시행본이 현행과 동일합니다.\n")
     if nxt:
-        kind = nxt.get("법령구분") or {"ordin": "조례·규칙", "admrul": "고시·예규"}.get(args.target, "법률")
-        sys.stderr.write(
-            f"[get-asof] 직후 개정: 공포 {_dot_date(nxt['공포일자'])} {kind} 제{nxt['공포번호']}호 (시행 {nxt['시행일자']})"
-            f" → 판례식: 구 {pick['명칭']}({_dot_date(nxt['공포일자'])} {kind} 제{nxt['공포번호']}호로 개정되기 전의 것)\n"
-        )
+        head, phrase = _precedent_phrase(pick, nxt, args.target)
+        if "나머지 부분" in head:
+            # 같은 개정의 단계적 시행분 — '그 개정 전'이라고 쓰면 선택본 자신을 가리키게 된다.
+            sys.stderr.write(f"[get-asof] 직후 변동: {head} → 판례식: {phrase} — 단계적 시행이므로 "
+                             "부칙의 시행일 규정을 확인하세요.\n")
+        else:
+            sys.stderr.write(f"[get-asof] 직후 개정: {head} → 판례식: {phrase}\n")
 
     # 본문 조회
     if args.target == "ordin":
@@ -1381,39 +1917,17 @@ def cmd_get_asof(args: argparse.Namespace) -> None:
     else:
         params = {"OC": oc, "target": "eflaw", "type": args.type,
                   "MST": pick["MST"], "efYd": pick["시행일자"]}
-    if args.jo:
-        if args.target == "law":
-            params["JO"] = encode_jo(args.jo)
-        else:
-            sys.stderr.write("NOTE: --jo는 법령(law)에서만 지원됩니다 — 전체 본문에서 해당 조를 발췌하세요.\n")
-    url = build_url(BASE_SERVICE, params)
+    if args.jo and args.target == "law":
+        params["JO"] = encode_jo(args.jo)
     if args.dry_run:
-        print(url)
+        print(_display_url(build_url(BASE_SERVICE, params)))
         return
-    body = http_get(url, no_cache=args.no_cache, strict_errors=True)
-    # JO 자동 폴백 — get-asof의 법령(eflaw) 본문에서 JO 지정 결과가 비면 대체 인코딩 1회 재시도.
-    if args.jo and args.target == "law" and args.type.upper() == "XML" and _jo_result_empty(body):
-        alt = alt_encode_jo(args.jo)
-        if alt and alt != params.get("JO"):
-            sys.stderr.write(
-                f"NOTE: JO={params.get('JO')} 결과가 비어 대체 인코딩 JO={alt}로 자동 재시도합니다.\n"
-            )
-            retry_params = dict(params)
-            retry_params["JO"] = alt
-            retry_body = http_get(build_url(BASE_SERVICE, retry_params),
-                                  no_cache=args.no_cache, strict_errors=True)
-            if not _jo_result_empty(retry_body):
-                body = retry_body
-            else:
-                sys.stderr.write(
-                    "NOTE: 대체 인코딩으로도 해당 조문을 찾지 못했습니다 — "
-                    "조문번호를 확인하거나 JO 없이 전체 본문을 받아 발췌하세요.\n"
-                )
-    output = maybe_pretty(body, args.type) if args.pretty else body
-    print(output)
-    if args.save_to:
-        with open(args.save_to, "w", encoding="utf-8") as f:
-            f.write(output)
+    body, url = _fetch_with_jo(params["target"], params, args.jo, args.type, args.no_cache,
+                               missing_hint="기준일 시행본에 이 조문이 없습니다 — 기준일 뒤에 신설됐거나 "
+                                            "조문번호가 바뀌었을 수 있습니다.")
+    if args.jo and args.target in LOCAL_JO_TARGETS:
+        body = _extract_articles(body, args.target, args.jo, args.type)
+    _emit(body, url, args, _body_text if args.text else None)
 
 
 # ---------------------------------------------------------------------------
@@ -1456,6 +1970,16 @@ def _apply_defaults(args: argparse.Namespace) -> argparse.Namespace:
     return args
 
 
+def _org_code(value: str) -> str:
+    """--org·--sborg는 기관 코드만 받는다 — 기관명을 넣으면 API가 행정규칙은 조용히 무시하고 자치법규는 0건을 돌려준다."""
+    v = value.strip()
+    if not v.isdigit():
+        raise argparse.ArgumentTypeError(
+            f"기관 코드(숫자)만 받는다 — '{v}'는 기관명이다(예: 금융위원회 1160100, 서울특별시 6110000). "
+            "코드를 모르면 --org 없이 검색하고 결과의 소관부처·지자체명으로 고른다.")
+    return v
+
+
 def make_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="law_api.py",
@@ -1483,15 +2007,17 @@ def make_parser() -> argparse.ArgumentParser:
     )
     s.add_argument("--page", type=int, default=1, help="페이지 번호 (기본 1)")
     s.add_argument("--search", help="검색범위 코드 (target=law: 1=법령명, 2=본문 등)")
-    s.add_argument("--org", help="소관부처 (행정규칙) / 지자체 시·도 코드 (자치법규)")
+    s.add_argument("--org", type=_org_code, help="소관부처 코드 (행정규칙) / 지자체 시·도 코드 (자치법규) — 숫자 코드만")
     s.add_argument("--nw", help="현행/연혁 필터 — eflaw: 1연혁,2시행예정,3현행 조합(예: 1,3) / ordin: 1현행, 2연혁")
-    s.add_argument("--sborg", help="자치법규 시·군·구 코드 (org와 함께)")
+    s.add_argument("--sborg", type=_org_code, help="자치법규 시·군·구 코드 (org와 함께)")
     s.add_argument("--knd", help="종류 코드 (target에 따라 의미 다름)")
     s.add_argument("--lid-search", "--lid", dest="lid_search",
                    help="LID(법령ID)로 한정 검색 — eflaw에서 특정 법령의 버전만 조회할 때 권장")
     s.add_argument("--efyd", help="시행일자 범위 YYYYMMDD~YYYYMMDD")
     s.add_argument("--ancyd", help="공포일자 범위 YYYYMMDD~YYYYMMDD")
     s.add_argument("--sort", help="정렬: lasc/ldes(법령명), dasc/ddes(공포일), ndes 등")
+    s.add_argument("--raw", action="store_true",
+                   help="원시 응답(XML) 그대로 출력 — 기본은 표. --save-to 파일은 늘 원시 응답")
     s.set_defaults(func=cmd_search)
 
     # get
@@ -1503,14 +2029,18 @@ def make_parser() -> argparse.ArgumentParser:
     _add_common(g)
     g.add_argument("--target", required=True, choices=list(VALID_TARGETS.keys()),
                    help="대상: " + ", ".join(f"{k}({v})" for k, v in VALID_TARGETS.items()))
-    g.add_argument("--mst", help="법령 마스터번호 (target=law)")
-    g.add_argument("--id", dest="id", help="법령ID/행정규칙ID/자치법규ID")
-    g.add_argument("--lid", help="LID (행정규칙·자치법규에서 사용)")
-    g.add_argument("--lm", help="법령명/규칙명 직접 지정")
-    g.add_argument("--jo", help="조문번호 (예: 390 또는 039000 또는 '제390조')")
-    g.add_argument("--efyd", help="시행일자 YYYYMMDD")
+    g.add_argument("--mst", help="법령일련번호(law) / 버전 MST(eflaw, --efyd와 함께) / 자치법규일련번호(ordin)")
+    g.add_argument("--id", dest="id", help="법령ID(law·eflaw) / 행정규칙일련번호(admrul) / 자치법규ID(ordin) / 해석례일련번호(expc)")
+    g.add_argument("--lid", help="행정규칙ID (admrul)")
+    g.add_argument("--lm", help="정식 법령명·규칙명 (약칭 불가, 띄어쓰기 무관)")
+    g.add_argument("--jo", help="조문번호 (예: 390, '제390조', '제10조의2'). admrul·ordin은 받은 본문에서 발췌")
+    g.add_argument("--promulgated", action="store_true",
+                   help="target=law: 미시행 내용이 있어도 공포일 기준 본문 그대로 출력(기본은 시행본으로 대체)")
+    g.add_argument("--efyd", help="시행일자 YYYYMMDD (eflaw --mst와 함께)")
     g.add_argument("--ancyd", help="공포일자 YYYYMMDD")
     g.add_argument("--lang", choices=["KO", "EN"], help="언어 (KO 기본, EN: 영문번역본 — 일부 법령만)")
+    g.add_argument("--text", action="store_true",
+                   help="평문 출력(기본정보 한 줄 + 조문 텍스트, 부칙·별표 제외) — XML에서만. --save-to 파일은 원시 XML")
     g.set_defaults(func=cmd_get)
 
     # download
@@ -1527,7 +2057,7 @@ def make_parser() -> argparse.ArgumentParser:
                    help="다건 다운로드: search 명령으로 저장한 별표·서식 검색 응답 XML 파일")
     d.add_argument("--filename", help="--url 모드 시 저장 파일명(확장자는 자동)")
     d.add_argument("--out-dir", dest="out_dir", default=None,
-                   help="저장 디렉터리 (기본: ./byl_downloads/)")
+                   help="저장 디렉터리 (기본: ./byl_downloads/ — 현재 폴더가 스킬 설치 폴더면 임시 폴더)")
     d.add_argument("--extract-text", dest="extract_text", action="store_true",
                    help="PDF 다운로드 후 pdftotext로 텍스트 추출(.txt 동시 저장)")
     d.add_argument("--limit", type=int, default=10,
@@ -1543,15 +2073,15 @@ def make_parser() -> argparse.ArgumentParser:
     )
     _add_common(v)
     v.add_argument("--target", choices=["law", "ordin", "admrul"], default="law",
-                   help="law(기본) / ordin(자치법규) / admrul(행정규칙 — 체인 역추적)")
+                   help="law(기본) / ordin(자치법규) / admrul(행정규칙)")
     v.add_argument("--id", help="행정규칙일련번호 — target=admrul 체인 역추적(보조 경로) 시작점")
     v.add_argument("--max-steps", dest="max_steps", type=int, default=15,
                    help="admrul 체인 역추적 상한 (기본 15단계, 단계당 API 1회)")
-    v.add_argument("--lid", help="법령ID — target=law에서 해당 법령의 버전만 조회(권장, 부분일치 오염 차단)")
+    v.add_argument("--lid", help="계통ID — law: 법령ID(권장, 부분일치 오염 차단) / admrul: 행정규칙ID / ordin: 자치법규ID(--query 결과 한정)")
     v.add_argument("--query", help="법령명(정확명 일치 필터) / 자치법규명·행정규칙명(부분일치 — 명칭·종류 확인용)")
     v.add_argument("--nw", help="eflaw nw 필터 (기본 1,3 = 연혁+현행, 시행예정 배제)")
-    v.add_argument("--org", help="자치법규 시·도 코드")
-    v.add_argument("--sborg", help="자치법규 시·군·구 코드 (org와 함께)")
+    v.add_argument("--org", type=_org_code, help="소관부처 코드 (행정규칙) / 시·도 코드 (자치법규) — 숫자 코드만")
+    v.add_argument("--sborg", type=_org_code, help="자치법규 시·군·구 코드 (org와 함께)")
     v.add_argument("--json", action="store_true", help="JSON으로 출력")
     v.set_defaults(func=cmd_versions)
 
@@ -1565,16 +2095,18 @@ def make_parser() -> argparse.ArgumentParser:
     _add_common(a)
     a.add_argument("--date", required=True, help="기준일 YYYYMMDD (예: 처분일 20190601)")
     a.add_argument("--target", choices=["law", "ordin", "admrul"], default="law",
-                   help="law(기본) / ordin(자치법규) / admrul(행정규칙 — 체인 역추적)")
+                   help="law(기본) / ordin(자치법규) / admrul(행정규칙)")
     a.add_argument("--id", help="행정규칙일련번호 — target=admrul 체인 역추적(보조 경로) 시작점")
     a.add_argument("--max-steps", dest="max_steps", type=int, default=15,
                    help="admrul 체인 역추적 상한 (기본 15단계)")
-    a.add_argument("--lid", help="법령ID (target=law 권장)")
-    a.add_argument("--query", help="법령명(정확명) / 자치법규명")
+    a.add_argument("--lid", help="계통ID — law: 법령ID(권장) / admrul: 행정규칙ID / ordin: 자치법규ID(--query 결과 한정)")
+    a.add_argument("--query", help="법령명(정확명) / 행정규칙명·자치법규명(부분일치 — 정확명이면 계통 자동 선택)")
     a.add_argument("--nw", help="eflaw nw 필터 (기본 1,3)")
-    a.add_argument("--org", help="자치법규 시·도 코드")
-    a.add_argument("--sborg", help="자치법규 시·군·구 코드")
-    a.add_argument("--jo", help="조문번호 (예: 46 또는 '제46조')")
+    a.add_argument("--org", type=_org_code, help="소관부처 코드 (행정규칙) / 시·도 코드 (자치법규) — 숫자 코드만")
+    a.add_argument("--sborg", type=_org_code, help="자치법규 시·군·구 코드")
+    a.add_argument("--jo", help="조문번호 (예: 46 또는 '제46조'). admrul·ordin은 받은 본문에서 발췌")
+    a.add_argument("--text", action="store_true",
+                   help="평문 출력(기본정보 한 줄 + 조문 텍스트) — XML에서만. --save-to 파일은 원시 XML")
     a.set_defaults(func=cmd_get_asof)
 
     return p

@@ -1,6 +1,6 @@
 ---
 name: bigcase-case-search
-description: 한국 판례 검색 사이트 bigcase.ai(빅케이스)에서 사용자 질의와 관련된 판례를 검색하고 판결문 본문을 조회하여 markdown으로 정리합니다. 'bigcase에서 검색', '빅케이스 판례', 'bigcase.ai에서 찾아줘' 등 bigcase 관련 검색·조사 요청 시 반드시 이 Skill을 사용하세요. 사건유형(민사/형사/행정/헌법/특허/가사)·법원(대법원)·재판유형(판결/결정)·선고기간(1/3/5년)을 선택 지정할 수 있습니다. lbox.kr 검색은 lbox-case-search 담당.
+description: 한국 판례 검색 사이트 bigcase.ai(빅케이스)에서 사용자 질의와 관련된 판례를 검색하고 판결문 본문을 조회하여 markdown으로 정리합니다. 'bigcase에서 검색', '빅케이스 판례', 'bigcase.ai에서 찾아줘' 등 bigcase 관련 검색·조사 요청 시 반드시 이 Skill을 사용하세요. 사건유형(민사/형사/행정/헌법/특허/가사)·법원(대법원)·재판유형(판결/결정)·선고기간(1/3/5년)을 선택 지정할 수 있습니다. lbox.kr 검색은 lbox-case-search 담당. 사이트를 지정하지 않은 판례 검색 요청도 대상이다 — 판례DB(원격 MCP·로컬)가 있으면 판례DB를 먼저 쓰고, 없으면 lbox-case-search·bigcase-case-search를 함께 써서 한 보고서로 합친다.
 ---
 
 # bigcase-case-search
@@ -15,7 +15,7 @@ bigcase.ai(빅케이스) 판례 검색 사이트에서 사용자 질의와 관�
 
 1. **Chrome 실행 + bigcase.ai 로그인 필수**: 유료 구독 계정으로 로그인되어 있어야 판례 전문 열람이 자유롭습니다. 사용자가 Chrome에서 미리 로그인해 두었다는 전제로 동작합니다. 이 Skill은 Chrome 확장(Claude in Chrome)의 계정 기반 연결로 작동하므로 Claude가 동작하는 PC와 Chrome이 실행되는 PC는 같을 필요가 없습니다. 단 bigcase.ai 로그인은 Chrome이 실제 실행 중인 PC에서 사용자가 직접 마쳐 두어야 합니다.
 
-2. **Chrome MCP 도구 선택**: `mcp__claude-in-chrome__*`(`navigate`, `javascript_tool`, `read_page`, `computer`, `tabs_context_mcp` 등)를 사용합니다. bigcase는 URL 직접 진입이 가능하므로 대부분 `navigate` + `javascript_tool` 두 가지로 충분하며, `computer`(클릭)는 기간 드롭다운 등 일부 필터 조작에만 필요합니다.
+2. **Chrome MCP 도구 선택**: 이름에 `claude-in-chrome`(호스트에 따라 `Claude_in_Chrome`)이 들어간 Claude in Chrome 도구(현재 `mcp__claude-in-chrome__*` — `navigate`, `javascript_tool`, `get_page_text`, `browser_batch`, `read_page`, `computer`, `tabs_context_mcp` 등)를 사용합니다. **`javascript_tool` 반환은 약 1,000자에서 잘리므로** 카드·본문 추출 결과는 `references/extraction.md` 0장의 반환 규약으로 받습니다(추출 JS가 결과를 페이지에 내놓고 → `get_page_text` → 복구 JS, 세 호출을 `browser_batch` 하나로). bigcase는 URL 직접 진입이 가능하므로 대부분 `navigate`와 이 추출 묶음으로 충분하며, `computer`(클릭)는 기간 드롭다운 등 일부 필터 조작에만 필요합니다.
 
 3. **연결된 브라우저 확인 + 선택**: `list_connected_browsers`로 연결된 Chrome 인스턴스를 확인하고, 여러 기기가 연결되어 있으면 어느 기기에서 bigcase.ai에 로그인했는지 사용자에게 확인한 뒤 `select_browser(deviceId)`로 지정합니다. 각 대화는 `tabs_context_mcp{createIfEmpty:true}`로 전용 탭을 확보한 뒤 그 `tabId`로 작업합니다.
 
@@ -37,11 +37,25 @@ bigcase.ai(빅케이스) 판례 검색 사이트에서 사용자 질의와 관�
 
 파라미터 값 표와 적용 방법은 `references/extraction.md` 1장을 따릅니다. 명시되지 않은 선택 파라미터는 적용하지 않습니다. 질의가 모호하거나 검색어 선정이 불확실하면 진행 전에 한 가지만 사용자에게 확인하세요.
 
+**사건번호 직조회(검증용 분기)**: 사건번호가 주어진 판례의 원문·상하급심 체인만 확인하면 되는 경우(서면 skill의 URL 직행 검증 — `shared/판례-인용-정책.md` 1.1-5)는 2~3단계를 건너뛰고 4단계의 본문 URL(`/cases/{법원명}/{사건번호}` — 사건번호는 **공식 표기**: 1999년 이전 접수분은 2자리 연도, 판례DB 정규형 `1999흐1`이 아니라 `99흐1`)로 바로 들어가 4단계·4.5단계만 수행한다. 보고서 파일은 사용자가 요청할 때만 쓴다.
+
+**서면 작성용 호출(판례 패키지 모드)**: 서면·자문의견서 작성 중 판례 보강으로 이 Skill을 쓰는 경우(`shared/판례-인용-정책.md` 1.1-1~4 — 판례DB 불충분·핵심 쟁점의 핵심 판례 검색·최신성·인용 수)에는 아래 규칙이 3~6단계의 같은 항목보다 우선합니다. 사용자가 이 Skill을 직접 불러 조사를 요청했으면 표준 흐름 그대로입니다.
+
+- **끝나는 조건**: 쟁점마다 인용 후보 — 대표 판례 1건과 그 판시를 이어받은 후속 판례 1~2건 — 가 확보되면 그 쟁점의 검색을 끝냅니다.
+- **페이지**: 1페이지부터 분류하고 인용 후보가 확보되면 멈춥니다. 모자라면 한 페이지씩 더 보되 **5페이지가 상한**입니다('최소 3페이지'·'High 10건' 규칙은 적용하지 않습니다).
+- **본문**: 인용 후보만 엽니다(High·Medium 전부가 아닙니다). 판례 패키지에 이미 있거나 판례DB로 원문을 읽을 수 있는 판례는 열지 않고 판례DB 원문을 씁니다(정책 1.2·3.).
+- **생략하지 않는 확인**(본문을 연 인용 후보): 하급심이면 4.5단계 (가)의 상급심 조회, 대법원 판례면 상하급심 체인 확인.
+- **재검색**: 5페이지까지 인용 후보가 없으면 검색어를 1회 바꿔 재검색하고(새 `?q=` URL), 그래도 없으면 '미확보'로 돌려줍니다(서면 skill이 정책 4.에 따라 처리). 5.5단계의 1차·2차 재검색은 적용하지 않습니다.
+- **최신성 확인이 목적**이면 기간 드롭다운(최근 1년 또는 기간 직접 입력)로 판례DB 수록 기준일 뒤로 좁혀 1페이지만 봅니다.
+- **산출**: 보고서 파일(6단계)을 쓰지 않습니다. 쟁점마다 인용 후보를 판례 패키지 항목(인용 표기·원문 단락·원천 `bigcase`·URL·상급심 흐름)으로 돌려주고(서면 skill이 판례 패키지 파일을 두었으면 그 파일에 덧붙이고), 제외한 판례 목록·검색 과정 서술은 남기지 않습니다.
+
+**사이트를 지정하지 않은 판례 조사**(사용자가 직접 요청 — 서면 작성 중 보강은 위 패키지 모드): 판례DB(원격 판례 MCP·로컬 판례DB)가 있으면 판례DB로 먼저 찾고 부족할 때만 이 절차로 보강합니다. 판례DB가 없으면 곧바로 **이 Skill과 lbox-case-search를 함께** 써서 두 사이트를 모두 검색합니다(한 브라우저 세션에서 차례로 — 사용자 결정 2026-09-26). 결과는 **보고서 하나**로 합칩니다 — 같은 판례는 한 번만 싣고 원천(lbox·bigcase)을 표시하며, 검색 조건에 두 사이트와 검색어를 모두 적고, 파일명은 `case-search-<주요키워드>-<YYYYMMDD>.md`입니다(양식은 먼저 연 Skill의 `references/report-format.md`). 한쪽 사이트가 로그인·구독 문제로 막히면 다른 쪽 결과로 보고서를 쓰고 그 사실을 첫머리에 밝힙니다.
+
 ### 2단계: 검색 실행 (직접 URL)
 
 `navigate`로 `https://bigcase.ai/search/case?q={encodeURIComponent(검색어)}`(+ 선택 파라미터)에 바로 진입합니다. 상단 탭은 **판례**가 기본이며, 문서범위 칩(전문판례/미리보기 판례/전체)은 기본값 **전문판례**, 정렬은 기본 **관련도순**을 그대로 사용합니다.
 
-> **navigate 후 짧게 대기**: 진입 직후 곧바로 JS를 실행하면 렌더링과 충돌해 `Runtime.evaluate timed out`이 날 수 있습니다. `navigate`와 추출 `javascript_tool` 호출을 분리하고 사이에 짧은 텀을 두세요.
+> **이동·추출은 batch 한 번에**: 진입 직후 곧바로 JS를 실행하면 렌더링과 충돌해 `Runtime.evaluate timed out`이 날 수 있으므로, 같은 batch 안에서 `computer` `wait` 2초를 먼저 넣고 추출합니다(`references/extraction.md` 0장).
 
 ### 3단계: 결과 카드 추출 및 페이지 순회
 
@@ -132,7 +146,7 @@ bigcase.ai(빅케이스) 판례 검색 사이트에서 사용자 질의와 관�
 
 ## 문제 발생 시
 
-증상별 대응(검색 0건, `Runtime.evaluate timed out`, `[BLOCKED]`, truncated, `Tab not found`, 구독·로그인 문제, 셀렉터 불일치, 병합 사건번호 등)은 `references/troubleshooting.md` 참조. 핵심: ① `navigate`와 `javascript_tool`은 분리 호출하고 짧은 텀을 둘 것, ② 결과 반환 시 원시 `outerHTML`·쿼리스트링을 포함하지 말 것(`[BLOCKED]` 차단 유발 — pathname·텍스트만), ③ 해시 접미사 클래스(`CaseParagraph_container__…` 등)는 프리픽스 매칭(`[class^="…"]`)으로 잡을 것.
+증상별 대응(검색 0건, `Runtime.evaluate timed out`, `[BLOCKED]`, `[TRUNCATED]`·복구, `Tab not found`, 구독·로그인 문제, 셀렉터 불일치, 병합 사건번호 등)은 `references/troubleshooting.md` 참조. 핵심: ① `navigate` 뒤에는 batch 안에서 `computer` `wait`로 2초 기다린 뒤 추출할 것(timeout이 나면 그 페이지만 분리 호출), ② 결과 반환 시 원시 `outerHTML`·쿼리스트링을 포함하지 말 것(`[BLOCKED]` 차단 유발 — pathname·텍스트만), ③ 해시 접미사 클래스(`CaseParagraph_container__…` 등)는 프리픽스 매칭(`[class^="…"]`)으로 잡을 것.
 
 ## 금지 사항
 
