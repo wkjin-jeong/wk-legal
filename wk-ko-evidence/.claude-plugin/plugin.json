@@ -1,0 +1,15 @@
+{
+  "name": "wk-ko-evidence",
+  "version": "0.1.0",
+  "description": "(실험) 한국 소송 증거·기록 분석 — 쪽 단위 변환본에서 문건 다이제스트·원천 현황·타임라인·인물 목록과 쟁점별 분석표(인부 검토표·진술 변천표 등)를 만들고 인용을 원문과 기계 대조. 유용성 검증 뒤 wk-ko-legal 편입 검토",
+  "author": {
+    "name": "Wookjin"
+  },
+  "keywords": [
+    "korean-law",
+    "legal",
+    "litigation",
+    "evidence-analysis",
+    "experimental"
+  ]
+}
