@@ -1,6 +1,6 @@
 # bigcase-case-search 추출 기술 reference
 
-SKILL.md 본문이 지시하는 시점에 해당 장만 읽는다. 모든 셀렉터·JS·파라미터 값은 2026-07-31 라이브 검증본이다(1-4, 2장 (1)의 판정 필드, 3-a의 `unavailable`, 4장은 2026-09-27). bigcase는 검색·본문 모두 서버 렌더 + 일반 DOM이며(판례 한정 — 비판례 상세는 PDF, 4장), 별도 API 호출·페이로드 복원이 필요 없다.
+SKILL.md 본문이 지시하는 시점에 해당 장만 읽는다. 모든 셀렉터·JS·파라미터 값은 2026-07-31 라이브 검증본이다(1-4, 1장 셀렉터 프로브, 2장 (1)의 판정 필드, 3-a의 `unavailable`, 3-c의 마커 제거, 4장은 2026-09-27). bigcase는 검색·본문 모두 서버 렌더 + 일반 DOM이며(판례 한정 — 비판례 상세는 PDF, 4장), 별도 API 호출·페이로드 복원이 필요 없다.
 
 > **클래스 안정성 규칙**: BEM식 클래스(`search-list-card`, `page-search-list__list-wrap`, `appealed-case-side__item`, `ai-similar-side__item`, `literature-case-side__card-wrap`, `pagination__number-item` 등)는 안정적이다. 반면 해시 접미사 클래스(`CaseParagraph_container__MdKLK`, `CaseContentInfo_container__po5LO`, `FilterItem_container__a_kTv` 등)는 배포 시 접미사가 바뀔 수 있으므로 **반드시 프리픽스 매칭**(`[class^="CaseParagraph_container"]`, `[class*="tp__title"]`)으로 잡는다.
 
@@ -12,7 +12,7 @@ SKILL.md 본문이 지시하는 시점에 해당 장만 읽는다. 모든 셀렉
 2. **복구 JS**: `if (window.__origBody) { document.body = window.__origBody; window.__origBody = null; } 'restored'` — 떼어 둔 원래 body를 그대로 되돌리므로 페이지 상태·이벤트가 유지된다(2026-09-26 실측: lbox 작업 결과 패널·판례 본문, bigcase 검색 결과 — 복구 뒤 페이지 넘기기·사이드바 펼치기 정상). **복구 전에는 `computer` 클릭·`screenshot`을 하지 않는다**(빈 화면을 누르게 된다). 아래 JS는 모두 첫 줄에서 먼저 복구하므로, batch가 중간에 끊겨도 다음 JS가 되살린다.
 3. 한 번에 내놓는 양은 12,000자 안팎까지로 한다(컨텍스트 절약). 더 필요하면 범위를 옮겨 다시 내놓는다 — `window.__bigcaseCards`·`window.__bigcaseSecs`에 저장해 둔 값에서 자르면 DOM을 다시 읽지 않아도 된다. 1,000자보다 확실히 작은 결과(탭 클릭 여부·건수 등)는 그대로 반환해도 된다.
 4. `get_page_text`에 JSON이 아니라 원래 페이지 글이 나오면 내놓기가 안 된 것이다 — 추출 JS의 반환값(`OUT n자`인지 오류인지)을 보고 다시 보낸다. 페이지 전체를 `get_page_text`로 읽어 본문을 얻으려 하지 않는다(사이드바·메뉴가 섞인다).
-5. **렌더 대기·재시도**: 이동·클릭 직후 곧바로 JS를 실행하면 렌더링과 충돌해 `Runtime.evaluate timed out`(45초)이 날 수 있어 batch 안에 `wait`를 먼저 둔다(2026-09-26 실측 — bigcase 판례 본문 2초, lbox 판례 본문 3초면 백그라운드 탭에서도 본문·사이드바까지 적재됐다. 비판례 PDF 상세는 백그라운드 탭에서 적재되지 않는다 — 4장의 `screenshot` 유도). 추출 결과가 0건·빈값이면(렌더 미완) `wait` 3초 → 추출 묶음만 다시 보낸다(최대 3회). timeout이 나면 그 페이지만 이동과 추출을 따로 보낸다.
+5. **렌더 대기·재시도**: 이동·클릭 직후 곧바로 JS를 실행하면 렌더링과 충돌해 `Runtime.evaluate timed out`(45초)이 날 수 있어 batch 안에 `wait`를 먼저 둔다(2026-09-26 실측 — bigcase 판례 본문 2초, lbox 판례 본문 3초면 백그라운드 탭에서도 본문·사이드바까지 적재됐다. 비판례 PDF 상세는 백그라운드 탭에서 적재되지 않는다 — 4장의 `screenshot` 유도). 추출 결과가 0건·빈값이면(렌더 미완) `wait` 3초 → 추출 묶음만 다시 보낸다(최대 3회). timeout이 나면 그 페이지만 이동과 추출을 따로 보낸다. 추출 JS 자체의 실행이 약 40초를 넘으면 `{"code":-32603,"message":"Internal error"}`로 강제 종료된다(2026-09-27 실측 — `references/troubleshooting.md`).
 6. **`await`는 최상위에서**: JS 안에서 기다려야 하면 async IIFE로 감싸지 말고 최상위 `await`를 쓴다 — async IIFE는 결과 대신 `{}`가 돌아온다(실측). 긴 대기는 JS 반복문이 아니라 `computer` `wait`로 한다.
 
 아래 JS는 모두 이 두 줄로 시작한다.
@@ -39,7 +39,7 @@ https://bigcase.ai/search/case?q={encodeURIComponent(검색어)}
 | `court` | 대법원=1000, 헌법재판소=5000 | 고등/지방 등 그룹 체크박스는 다수 코드로 전개되므로 URL 구성은 대법원·헌재만 권장, 그 외는 UI 클릭 |
 | `decision_type` | 전체=0, 판결=1, 결정=2 | 재판 유형 라디오 |
 
-- 정렬은 기본 **관련도순**, 문서범위 칩은 기본 **전문판례**를 그대로 쓴다(이들은 URL 파라미터가 아니다).
+- 정렬은 기본 **관련도순**(옵션: 관련도순/선고일순 — URL 파라미터가 아니다)을 그대로 쓴다.
 - **기간(선고일) 필터는 URL 수동 구성 금지** — 우측 "기간" 드롭다운(기본 라벨 "전체 기간")을 클릭해 "최근 1년/3년/5년/기간 직접 입력"을 선택한다(적용 시 `period_id`·`start_date`·`end_date`가 URL에 반영된다. 실측: 최근 3년=`period_id=2`). "기간 직접 입력"은 두 입력칸에 숫자 6자리(YYMMDD — 칸에는 YY.MM.DD로 표시)를 넣고 그 아래 "검색"을 누른다(`period_id=4`, 시작일 당일 포함 — 실측 2026-09-27: 26.07.09 시작에 2026. 7. 9. 선고 2025두34214 포함). 드롭다운은 `computer` 클릭(스크린샷으로 위치 확인)이 확실하다.
 - 필터 적용 여부는 결과 상단의 **적용 칩**(예: "결정 ×")과 URL 변화로 확인한다.
 
@@ -124,6 +124,25 @@ https://bigcase.ai/search/case?q={encodeURIComponent(검색어)}
 - 제목·footer의 기관명은 bigcase의 제공 기관 분류일 수 있다 — 인용 메타는 4장에서 원문으로 확인한다. 총 건수 문구가 없으므로 `total`은 두지 않는다.
 - 페이지 순회: `raw`(중복 제거 전 카드 수)가 10 미만이 될 때까지 `&page=N`을 올리되 최대 5페이지. 중복 제거 뒤의 `count`로 판정하지 않는다(중복이 섞인 꽉 찬 페이지를 마지막으로 오판한다).
 - 상세는 PDF 본문이다 — 4장 절차로 읽는다. 법제처 법령해석례는 ko-law-api `expc`가 정본이다.
+
+### 셀렉터가 안 맞을 때
+
+해시 접미사 클래스는 프리픽스 매칭(`[class^="…"]`)으로 바꿔 잡는다. BEM 클래스(`search-list-card` 등)까지 0건이면 UI 개편이다 — `read_page`는 역할·텍스트·href만 보여 주고 class·data-* 속성은 보여 주지 않으므로, 아래 JS 프로브로 앵커 요소와 조상의 class·속성명을 확인해 셀렉터를 조정한다. 결과가 짧으므로 내놓지 않고 그대로 반환한다(0장 3.). 그래도 안 되면 사용자에게 알리고 중단한다.
+
+```javascript
+// 앵커 → 조상 5단계의 tag.class 전부 [data-*·href 속성명] — class를 자르지 않는다(카드를 가리는 class가 뒤쪽에 올 수 있다)
+// 시작: 카드 제목 → 없으면 제목 글자('{선고일} 선고|자')를 담은 요소. 본문 페이지면 시작을 '[class*="tp__title"]'(섹션 제목)으로 바꾼다.
+(() => {
+  if (window.__origBody) { document.body = window.__origBody; window.__origBody = null; }   // 복구(0장)
+  let a = document.querySelector('.search-list-card__title');
+  if (!a) { const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT); let n; while ((n = w.nextNode())) if (/\d{4}\.\s*\d{1,2}\.\s*\d{1,2}\.\s*(선고|자)\s/.test(n.nodeValue)) { a = n.parentElement; break; } }
+  if (!a) return 'no-anchor';
+  const out = []; let e = a;
+  for (let i = 0; i < 5 && e; i++, e = e.parentElement)
+    out.push(e.tagName + '.' + String(e.className).trim().split(/\s+/).join('.') + ' [' + e.getAttributeNames().filter(n => n.startsWith('data-') || n === 'href').join(',') + ']');
+  return JSON.stringify(out);
+})()
+```
 
 ## 2. 판례 본문 추출 (`/cases/{법원명}/{사건번호}`)
 
@@ -229,7 +248,7 @@ lbox와 달리 관련 자료 링크가 모두 실제 `href`이므로 추출이 �
 
 - 하급심 본문을 visit했다면 여기 나온 상급심을 **반드시 navigate**해 주문·이유를 확인한다(SKILL 4.5단계 (가)).
 - `unavailable: true` 항목(텍스트가 "{법원} null" 꼴)은 bigcase에 원문이 없다 — 판례DB(`case_db.py search --case-no`·원격 `search_cases`)나 lbox 사건번호 URL 직행(정책 1.1-5)으로 확인하고, 거기에도 없으면 SKILL 4.5단계 (가) ⑤의 본문 부재 예외를 따른다.
-- 체인이 0건이면 짧은 텀 후 1회 재실행한 뒤에야 "상하급심 없음"으로 판정한다(사이드바 지연 렌더 대비).
+- 체인이 0건이면 짧은 텀 후 1회 재실행한 뒤에야 "상하급심 없음"으로 판정한다(사이드바 지연 렌더 대비. 비판례 상세 페이지는 사이드바가 없다 — SKILL 4.5단계, 실측 2026-09-27 재결·유권해석·결정례 상세 모두 사이드바 요소 0).
 
 **(3-b) 참조판례·이유 내 인용 판례** — 본문 섹션 안의 `/cases/` 링크. 참조조문·이유 속 법령 링크는 `/law/{법령명}/{조문}` 형태이므로 법령 확인이 필요하면 ko-law-api로 검증해 인용한다(bigcase 법령 페이지를 인용 출처로 쓰지 않는다).
 
@@ -251,14 +270,14 @@ lbox와 달리 관련 자료 링크가 모두 실제 `href`이므로 추출이 �
 (() => {
   if (window.__origBody) { document.body = window.__origBody; window.__origBody = null; }   // 복구(0장)
   const OUT = s => { if (!window.__origBody) window.__origBody = document.body; const b = document.createElement('body'), p = document.createElement('pre'); p.textContent = s; b.appendChild(p); document.body = b; return 'OUT ' + s.length + '자'; };
-  const txt = e => e ? (e.innerText || '').replace(/\s+/g, ' ').trim() : '';
+  const txt = e => e ? (e.innerText || '').replace(/<!H[SE]>/g, '').replace(/\s+/g, ' ').trim() : '';   // 검색 하이라이트 마커 '<!HS>…<!HE>'가 글자로 섞여 나온다(실측 2026-09-27 2016다24284 — 관련 논문 제목에만, 카드·본문·상하급심·유사판례는 0회)
   const path = a => { try { return decodeURIComponent(new URL(a.href).pathname); } catch (e) { return null; } };
   const similar = Array.from(document.querySelectorAll('.ai-similar-side__item')).map(e => ({
     title: txt(e.querySelector('.ai-similar-side__item-title')).slice(0, 90),
     path: (Array.from(e.querySelectorAll('a')).map(path).filter(Boolean)[0]) || (e.tagName === 'A' ? path(e) : '')
   }));
   const papers = Array.from(document.querySelectorAll('.literature-case-side__card-wrap')).slice(0, 10)
-    .map(e => txt(e.querySelector('.literature-case-side__card-title')).slice(0, 90));
+    .map(e => txt(e.querySelector('.literature-case-side__card-title')).slice(0, 150));
   return OUT(JSON.stringify({ similar, paperTotal: document.querySelectorAll('.literature-case-side__card-wrap').length, papersTop: papers }));
 })()
 ```
@@ -330,6 +349,6 @@ JS-C(발췌) — 2장 (2)와 같은 방식으로 `window.__bigcasePdfText`에서
 
 1. **재결(행정심판례)**: 머리 '[○○행정심판위원회사건 {사건번호}, {재결일}, {결과}]'의 위원회명을 재결 기관으로 쓴다(예: 439952 → 경기도행정심판위원회 · 2017. 10. 30. · 2017경기행심1480). 재결 기관(행정심판위원회)은 행정심판법 제6조가 처분청에 따라 정한다 — 감사원·국가정보원장 등의 처분은 그 행정청에 두는 위원회(제1항), 그 밖의 국가행정기관의 장과 시·도지사 등의 처분은 국민권익위원회에 두는 중앙행정심판위원회(제2항), 시·도 소속 행정청과 관할 시·군·자치구의 장 등의 처분은 시·도지사 소속 행정심판위원회(제3항), 대통령령으로 정하는 특별지방행정기관의 장의 처분은 직근 상급행정기관에 두는 위원회(제4항). 어느 경우에도 '국민권익위원회'는 재결 기관명이 아니다(제2항의 경우 재결 기관명은 '중앙행정심판위원회'). 머리에 위원회명이 없으면(예: 3299 '[사건 2014-05850, 2014. 12. 2.]') 사건번호 체계(경기행심·서행심 등)나 카드 라벨로 추정하지 않고 `[재결 기관 확인 필요]`를 달아 돌려준다.
 2. **유권해석**: 원문 표제('법령해석 회신' 등)·소관부처·회신일을 원문대로 쓴다. 원문에 기관명 없이 과 이름만 있으면(예: 486 '소관부처 금융소비자정책과') 카드 기관명을 '(bigcase 분류: 금융위원회)'로 병기하고 `[발신기관 확인 필요]`를 단다. 카드·h1 제목의 번호(예: 220200)는 사이트 일련번호다 — **일련번호를 문서번호로 표기하지 않고** '(bigcase 일련번호: 220200)'로만 병기한다. 원문에 문서번호가 없으면 문서번호 칸은 비운다.
-3. **결정례**: 원문 머리의 기관·의결(결정)일·의결(의안)번호(예: 제2020-1소위1-복02호)를 쓴다. 국민권익위원회 고충민원 의결에는 원문 주문의 처리 유형을 확인해 자료 성격을 붙인다(「부패방지 및 국민권익위원회의 설치와 운영에 관한 법률」): 시정권고·의견표명(제46조)과 제도개선 권고·의견표명(제47조)은 '법적 구속력 없음(관계 행정기관등의 장에게 존중 의무와 30일 내 처리결과 통보 의무, 같은 법 제50조 제1항)', 조정(제45조)은 '「민법」상 화해와 같은 효력(같은 조 제3항)'. 유형을 확인하지 못하면 성격을 단정하지 않고 `[처리 유형 확인 필요]`를 단다. 결정례 탭의 다른 기관 결정(감사원 심사결정·공정거래위원회 의결·국세청 심사결정·개인정보보호위원회 의결 등)은 구속력을 단정하지 않고 원문 머리의 기관과 결정 유형만 적는다.
+3. **결정례**: 원문 머리의 기관·의결(결정)일·의결(의안)번호(예: 제2020-1소위1-복02호)를 쓴다. 국민권익위원회 고충민원 의결에는 원문 주문의 처리 유형을 확인해 자료 성격을 붙인다(부패방지 및 국민권익위원회의 설치와 운영에 관한 법률): 시정권고·의견표명(제46조)과 제도개선 권고·의견표명(제47조)은 '법적 구속력 없음(관계 행정기관등의 장에게 존중 의무와 30일 내 처리결과 통보 의무, 같은 법 제50조 제1항)', 조정(제45조)은 '민법상 화해와 같은 효력(같은 조 제3항)'. 유형을 확인하지 못하면 성격을 단정하지 않고 `[처리 유형 확인 필요]`를 단다. 결정례 탭의 다른 기관 결정(감사원 심사결정·공정거래위원회 의결·국세청 심사결정·개인정보보호위원회 의결 등)은 구속력을 단정하지 않고 원문 머리의 기관과 결정 유형만 적는다.
 
 최종 인용 형식은 서면 스킬(ko-administrative-drafting·ko-legal-advisory-drafting)이 정한다. 이 스킬은 위 메타와 자료 성격을 판례 패키지 항목으로 돌려준다.

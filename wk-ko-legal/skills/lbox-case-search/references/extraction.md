@@ -10,7 +10,7 @@ SKILL.md 본문이 지시하는 시점에 해당 장만 읽는다. 모든 셀렉
 2. **복구 JS**: `if (window.__origBody) { document.body = window.__origBody; window.__origBody = null; } 'restored'` — 떼어 둔 원래 body를 그대로 되돌리므로 페이지 상태·이벤트가 유지된다(2026-09-26 실측: lbox 작업 결과 패널·판례 본문, bigcase 검색 결과 — 복구 뒤 페이지 넘기기·사이드바 펼치기 정상). **복구 전에는 `computer` 클릭·`screenshot`을 하지 않는다**(빈 화면을 누르게 된다). 아래 JS는 모두 첫 줄에서 먼저 복구하므로, batch가 중간에 끊겨도 다음 JS가 되살린다.
 3. 한 번에 내놓는 양은 12,000자 안팎까지로 한다(컨텍스트 절약). 더 필요하면 범위를 옮겨 다시 내놓는다 — `window.__lboxCards`·`window.__lboxMain`에 저장해 둔 값에서 자르면 DOM을 다시 읽지 않아도 된다. 1,000자보다 확실히 작은 결과(탭 클릭 여부·건수 등)는 그대로 반환해도 된다.
 4. `get_page_text`에 JSON이 아니라 원래 페이지 글이 나오면 내놓기가 안 된 것이다 — 추출 JS의 반환값(`OUT n자`인지 오류인지)을 보고 다시 보낸다. 페이지 전체를 `get_page_text`로 읽어 본문을 얻으려 하지 않는다(사이드바·메뉴가 섞인다).
-5. **렌더 대기·재시도**: 이동·클릭 직후 곧바로 JS를 실행하면 렌더링과 충돌해 `Runtime.evaluate timed out`(45초)이 날 수 있어 batch 안에 `wait`를 먼저 둔다(2026-09-26 실측 — bigcase 판례 본문 2초, lbox 판례 본문 3초면 백그라운드 탭에서도 본문·사이드바까지 적재됐다). 추출 결과가 0건·빈값이면(렌더 미완) `wait` 3초 → 추출 묶음만 다시 보낸다(최대 3회. lbox 작업(Task)의 결과 패널은 검색이 끝나야 채워지므로 제출 직후에는 `wait` 3초씩 최대 5회. **작업 주소로 다시 들어갈 때**(새로고침·재진입)는 [`navigate` → `wait` 2초 → `computer` `zoom`(작은 영역, `scale` 0.3) 또는 `screenshot` 1회 → `wait` 3초 → 확인]으로 한다 — 백그라운드 탭(`document.visibilityState` 'hidden')에서는 화면을 한 번 그려야 작업 적재가 시작된다(2026-09-27 실측: 그리지 않으면 20초 넘게 스피너, `zoom` 한 번 뒤 약 5초에 timeline). 그래도 비면 5초씩 최대 5회 더 기다린다. timeline이 떴는데 패널이 닫혀 있으면 검색 카드를 누른다). timeout이 나면 그 페이지만 이동과 추출을 따로 보낸다.
+5. **렌더 대기·재시도**: 이동·클릭 직후 곧바로 JS를 실행하면 렌더링과 충돌해 `Runtime.evaluate timed out`(45초)이 날 수 있어 batch 안에 `wait`를 먼저 둔다(2026-09-26 실측 — bigcase 판례 본문 2초, lbox 판례 본문 3초면 백그라운드 탭에서도 본문·사이드바까지 적재됐다). 추출 결과가 0건·빈값이면(렌더 미완) `wait` 3초 → 추출 묶음만 다시 보낸다(최대 3회. lbox 작업(Task)의 결과 패널은 검색이 끝나야 채워지므로 제출 직후에는 `wait` 3초씩 최대 5회. **작업 주소로 다시 들어갈 때**(새로고침·재진입)는 [`navigate` → `wait` 2초 → `computer` `zoom`(작은 영역, `scale` 0.3) 또는 `screenshot` 1회 → `wait` 3초 → 확인]으로 한다 — 백그라운드 탭(`document.visibilityState` 'hidden')에서는 화면을 한 번 그려야 작업 적재가 시작된다(2026-09-27 실측: 그리지 않으면 20초 넘게 스피너, `zoom` 한 번 뒤 약 5초에 timeline). 그래도 비면 5초씩 최대 5회 더 기다린다. timeline이 떴는데 패널이 닫혀 있으면 검색 카드를 누른다). timeout이 나면 그 페이지만 이동과 추출을 따로 보낸다. JS 실행 자체가 약 40초를 넘으면 `-32603 Internal error`로 강제 종료된다 — 대기는 JS가 아니라 `computer` `wait`로 한다(`references/troubleshooting.md`).
 6. **`await`는 최상위에서**: JS 안에서 기다려야 하면 async IIFE로 감싸지 말고 최상위 `await`를 쓴다 — async IIFE는 결과 대신 `{}`가 돌아온다(실측). 긴 대기는 JS 반복문이 아니라 `computer` `wait`로 한다.
 
 아래 JS는 모두 이 두 줄로 시작한다.
@@ -29,7 +29,7 @@ const OUT = s => { if (!window.__origBody) window.__origBody = document.body; co
 1. `navigate` → `https://lbox.kr/`.
 2. `computer` `screenshot`으로 컴포저를 확인한다. 컴포저는 상단 가운데의 입력창(placeholder "내용을 입력하세요")이고, 그 아래 줄 오른쪽에 **모드 아이콘**이 있다: `[자동]`(라벨) · **돋보기(검색)** · 다이아(질의) · 펜(문서) · **↑(제출)**.
 3. 입력창을 클릭하고 검색어를 `type` 한다.
-4. **돋보기(검색) 아이콘**을 클릭한다. 선택되면 그 아이콘에 흰색 둥근 박스 하이라이트가 생긴다(불확실하면 `computer` `zoom`으로 아이콘 영역을 확대해 확인). "자동" 모드로도 검색형 질의는 검색으로 라우팅되지만, 결정적으로 하려면 **검색 모드를 명시 선택**한다.
+4. **돋보기(검색) 아이콘**을 클릭한다. 선택되면 그 아이콘에 둥근 강조 박스(테마에 따라 흰색 또는 회색)가 생기고 툴팁은 "법률 콘텐츠 검색"이다(불확실하면 `computer` `zoom`으로 아이콘 영역을 확대해 확인). "자동" 모드로도 검색형 질의는 검색으로 라우팅되지만, 결정적으로 하려면 **검색 모드를 명시 선택**한다.
 5. **↑(제출)** 을 클릭한다. `/task/{id}`로 이동하고 결과 패널이 열린다.
 
 > 좌표는 화면 크기마다 다르므로 매번 `screenshot`으로 확인한다. `find`("composer input", "submit button")로 ref를 잡아 `computer{ref}` 클릭해도 된다. 제출 클릭 뒤 결과 추출은 같은 batch에서 `computer` `wait` 3초 뒤에 한다(0장). 결과 패널은 검색이 끝나야 채워지므로 카드가 0건이면 `wait` 3초 → 추출 묶음만 다시(최대 5회 — 재진입은 0장-5의 재진입 대기).
@@ -131,12 +131,14 @@ const OUT = s => { if (!window.__origBody) window.__origBody = document.body; co
 
 ### 셀렉터가 안 맞을 때
 
-`a[data-track-props]`가 0건이면 (ⓐ 패널이 닫힘 → timeline 검색 카드 클릭, ⓑ 판례 탭이 비활성 → 판례 탭 클릭, ⓒ UI 변경 → 아래 JS 프로브로 카드 앵커의 속성명과 조상 class를 확인해 셀렉터 조정 — `a[href^="/case/"]` 대체 경로) 순으로 점검한다. `read_page`는 역할·텍스트·href만 보여 주고 class·data-* 속성은 보여 주지 않으므로 프로브는 JS로 한다. 그래도 안 되면 사용자에게 알리고 중단한다.
+판례 카드(`a[data-track-props]` 중 `documentType:"precedent"`)가 0건이면 (ⓐ 패널이 닫힘 → timeline 검색 카드 클릭, ⓑ 판례 탭이 비활성 → 판례 탭 클릭, ⓒ UI 변경 → 아래 JS 프로브로 카드 앵커의 속성명과 조상 class를 확인해 셀렉터 조정 — `a[href^="/case/"]` 대체 경로) 순으로 점검한다. `read_page`는 역할·텍스트·href만 보여 주고 class·data-* 속성은 보여 주지 않으므로 프로브는 JS로 한다. 그래도 안 되면 사용자에게 알리고 중단한다.
 
 ```javascript
 // 앵커 → 조상 5단계의 tag.class 전부 [data-*·href 속성명] — class를 자르지 않는다(카드를 가리는 class가 뒤쪽에 올 수 있다)
+// 사이드바 작업 목록 링크도 a[data-track-props]라서 첫 앵커를 그냥 잡으면 안 된다(2026-09-27 실측) — documentType으로 거른다
 (() => {
-  const a = document.querySelector('a[data-track-props]') || document.querySelector('a[href^="/case/"]');
+  const isCase = a => { try { return JSON.parse(a.getAttribute('data-track-props')).documentType === 'precedent'; } catch { return false; } };
+  const a = [...document.querySelectorAll('a[data-track-props]')].find(isCase) || document.querySelector('a[href^="/case/"]');
   if (!a) return 'no-anchor';
   const out = []; let e = a;
   for (let i = 0; i < 5 && e; i++, e = e.parentElement)
@@ -147,7 +149,7 @@ const OUT = s => { if (!window.__origBody) window.__origBody = document.body; co
 
 ## 2. 판례 본문 추출 (`/case/{법원}/{사건번호}`)
 
-> 본문 canonical URL은 `/case/{법원}/{사건번호}`다. 실측(2026-07): 구 `/case/{법원}/{사건번호}` 경로도 `/case/…`로 자동 리다이렉트되어 여전히 작동하나, 신규 구성은 `/case/`를 쓴다.
+> 본문 canonical URL은 `/case/{법원}/{사건번호}`다. 실측(2026-07): 구 `/precedent/{법원}/{사건번호}` 경로도 `/case/…`로 자동 리다이렉트되어 여전히 작동하나, 신규 구성은 `/case/`를 쓴다.
 
 > **개편 핵심**: 본문은 이제 일반 DOM으로 렌더된다. 탭이 `visibilityState=hidden`이어도 `document.body.innerText`가 정상(전원합의체 장문 판결 실측 약 60,000자, 단락 전수 적재)이다. **개편 전의 `<script>` 페이로드 한국어 복원 방식은 폐기** — 페이지에 섞인 "최근 본 자료/추천 판례" 텍스트까지 끌어와 다른 사건 내용이 노이즈로 섞인다.
 
@@ -157,7 +159,7 @@ const OUT = s => { if (!window.__origBody) window.__origBody = document.body; co
 
 | prefix | 내용 |
 |---|---|
-| `topheader-1` / `topheader-2` | 법원(예: 대법원) / 판결 종류(판결·결정). **하급심은 `topheader-2`에 판결 종류 대신 재판부명(예: "제6민사부")이 올 수 있다** — 판결 종류 판정 근거로 쓰지 말 것 |
+| `topheader-1` / `topheader-2`(/ `topheader-3`) | 법원(예: 대법원) / 판결 종류(판결·결정). **재판부명이 있는 판례는 `topheader-2`가 재판부명(예: 대법원 "제1부", 하급심 "제6민사부")이고 판결 종류는 `topheader-3`으로 밀린다**(2026-09-27 실측: 대법원 2026다202937 → 제1부/판결, 대법원 2012다89399 → 판결) — 판결 종류는 마지막 `topheader`에서 읽는다 |
 | `before-*` | 사건정보 표(사건번호·당사자·**원심판결** 등). `before-1`이 전체 블록 |
 | `issue-*` | **판시사항** |
 | `summary-*` | **판결요지** |
@@ -182,11 +184,13 @@ const OUT = s => { if (!window.__origBody) window.__origBody = document.body; co
   const mains = sorted('main').map(txt).filter(Boolean);
   window.__lboxMain = mains;                                  // 본문 단락 배열(분할 접근용)
   const judges = sorted('judges').map(txt).filter(Boolean);
+  const heads = sorted('topheader').map(txt).filter(Boolean);  // 법원 / (재판부) / 판결 종류
   const fullMain = mains.join('\n');
   return OUT(JSON.stringify({
     title: document.title.replace(/\s*[-|]\s*LBOX.*$/, ''),  // 법원·선고일·사건번호·[사건명] — 제목 끝은 ' | LBOX'(2026-09 실측)
-    court: txt(document.querySelector('[data-node-id="lbox-paragraph-topheader-1"]')),
-    type:  txt(document.querySelector('[data-node-id="lbox-paragraph-topheader-2"]')),
+    court: heads[0] || '',
+    type:  heads.length > 1 ? heads[heads.length - 1] : '',   // 판결 종류 = 마지막 topheader
+    bench: heads.length > 2 ? heads[1] : '',                  // 재판부명(있을 때만 topheader-2)
     caseInfo: txt(document.querySelector('[data-node-id="lbox-paragraph-before-1"]')).slice(0, 400), // 당사자·원심판결
     issue: join('issue'),       // 판시사항
     summary: join('summary'),   // 판결요지

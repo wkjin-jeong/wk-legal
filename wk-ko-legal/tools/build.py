@@ -4,7 +4,7 @@
 
 검증 항목:
   1. plugin.json 존재·필수 필드(name, version)
-  2. skills/*/SKILL.md 존재 + frontmatter name == 폴더명
+  2. skills/*/SKILL.md 존재 + frontmatter name == 폴더명 (+ description 1024자, 재첨부 한도 2만 자·본문 400줄 경고)
   3. SKILL.md 가 참조하는 references/*.md 실존 여부
   4. 구명칭(korean-*) 잔존 검사 — 허용 예외: law_api.py, .env.example,
      ko-law-api/SKILL.md 의 '~/.config/korean-law-api/.env' 경로 행
@@ -86,7 +86,42 @@ DRIFT_PATTERNS: list[tuple[str, str, str | None]] = [
     (r"bookId \+ '\|' \+ tocId \+ '\|' \+ nodeId", "PDF형 실무서 카드 dedup 누락 — docId·page 포함 키로", None),
     (r"빅케이스Plus 시작하기|무제한 열람", "bigcase 페이월 증상 낡음 — '회원에게만 공개되는 판례'", None),
     (r"\['1', N\]", "lbox 옛 페이지 이동 JS(번호 버튼) — 6쪽 이후 실패. '다음으로 이동' 기준 JS로(extraction.md 1-3·1-4)", None),
+    # P3 — 기능 검증 P3 수정분의 재발 방지('앞부분만 다시 붙'·'입증방법'은 wk-ko-evidence에 남아 보류, 가공 사건번호는 오케스트레이터 몫)
+    (r"0건이면 (?:lbox|다른)", "크로스 폴백 조건 — 패키지 모드 '미확보'(재검색 뒤에도 인용 후보 없음)면 lbox(판례-인용-정책 1.1)",
+     r"드리프트 린트"),
+    (r"보전·집행 등\)[^\n]*민사소송 실무제요", "보전·집행을 민사소송 실무제요로 지정 — 연동 정책 3.(분야 도서 미수록 시 6. 폴백)", None),
+    (r"(?<![가-힣])가사 [^\n]{0,60}?더라도", "가정적 주장 표지 '가사' — '설령 ~라 하더라도'로(기본-문체-규칙 7.)",
+     r"쓰지 않는다|지양|금지|대신|아니라|허용 변형|린트"),
+    (r"(?:이라|라) 합니다\.\)", "별칭 정의 괄호 안 마침표 — (이하 '○○'이라 합니다)", None),
+    (r"금 일억 원", "금액 한글 병기 — 아라비아 숫자+쉼표(기본-문체-규칙 8.)", r"하지 않는다|병기 없음"),
+    (r'"위 ○○○"', "대명사형 약칭 — 호칭 반복(기본-문체-규칙 8.)", None),
+    (r"증거순번 [○\d]+번", "증거순번 표기 — '증거순번 N'(형사 08 3.)", None),
+    (r"증거기록 (?:[○\d]+권 )?[○\d]+면", "증거기록 좌표 — 'N권 N쪽'(형사 08 3.)", None),
+    (r"연·월·일 중 (?:\*\*)?하나만", "부분 날짜 자기모순 조항 — 연·월 '2026. 6.', 시기 불명 '2026. 6.경'(기본-문체-규칙 5.)", None),
+    (r"「[^」\n]{1,60}(?:법|령|규칙|규정)」\s*(?:제\d+조|\[별)", "서면 법령명 낫표 — 낫표 없이(호출한 서면 스킬 문체 가이드, 원문 전재만 예외)",
+     r"원문|전재"),
+    (r"(?:민법|형법|상법|민사소송법|형사소송법) §", "조문 '§' 표기 — '민법 제○조'로(판례-인용-정책 5.)", None),
+    (r"원천 `(?:bigcase|lbox)`·URL·상급심 흐름", "패키지 필드의 text_status 처리 누락 — 판례-인용-정책 1.2 판례 패키지 구성",
+     r"text_status"),
+    (r"선고 (?:19|20)?\d{2}[가-힣]{1,3}(?:12345|123456|234567|987654)(?!\d)|\.자 (?:19|20)?\d{2}[가-힣]{1,3}123(?!\d)",
+     "가공 사건번호를 실제 판례처럼 — ○ 자리표시 또는 판례DB 실존 번호(판례-인용-정책 5.)", None),
+    (r'\(이하 "[^"]+"\)', "약칭 정의 — (이하 '○○법'이라 합니다)(ko-law-api 6.)", None),
+    (r"별표 본문 HTML을 받을 수|별표 단건 조회 가능", "별표 상세링크(type=HTML)는 본문 없는 iframe 껍데기 — get-asof --byl", None),
+    (r"이 사건 청구에 이른 것입니다|이유 없으므로 기각되어야 합니다", "소장·답변서 구 결론 문형 — 위키 결어 정형·재판부 요청형", None),
+    (r"\((?:소)?[갑을] 제\d+호증(?:의 \d+(?:, \d+)?)? (?:각 )?[^'\)\d,각][^)]*\)", "증거 인용 구형 — 서증명 작은따옴표 + '참조'(민사 06)", None),
+    (r"연·성행·환경|연령·성행·환경", "형법 제51조 제1호 '지능' 누락", None),
+    (r"증 제[○\dN]+호(?!증)", "형사 서증 표기 — '증 제N호증'", None),
+    (r"매매\(제568조 이하\)|연대보증\(제437조\)|상법\(회사·상행위·어음·수표\)", "자문 03·SKILL 민법·상법 범위 오기", None),
+    (r"외국환거래규정\*{0,2} \(기획재정부|lawnav\.fss\.or\.kr", "자문 02 낡은 소관·폐지 주소 — 재정경제부, fss.or.kr", None),
+    (r"3단 논증 형식 — \(1\) 쟁점의 정리|3단 논증에 부합", "자문 논증 단계 명칭 — '4단 구조'", None),
+    (r"`href`는 없고|구 `/case/|LBOX 판례|흰색? 둥근", "lbox 화면 낡은 서술 — 카드 앵커 href 있음, 구 경로 /precedent/, 제목 ' | LBOX', 회색 강조", None),
+    (r"3차 재시도|질의 바로 다음|`lbox 1차: … / bigcase 1차: …`", "검토 한계 차수·위치 — 원검색·1차·2차 재시도, '검색 조건' 절 다음", None),
+    (r"민사집행법·행정소송법은 [^)]*노출되지 않|`/book/list`의 \*\*\"법령별 도서목록\"\(모달\)|전체 DOM을 2벌(?:로 그린다| 렌더한다)",
+     "lbox 주석서 화면 낡은 서술 — 법령 그룹 노출·도서목록 모달 위치·1벌 렌더(filter-map·extraction)", None),
+    (r"문서범위 칩|전문판례|`read_page`로 (?:구조|결과 영역 구조|카드 단위)", "bigcase 낡은 서술 — 문서범위 칩 없음, read_page는 class·data-*를 안 보여 줌(JS 프로브)", None),
 ]
+# SKILL.md 크기 한도: 컴팩션 뒤 하니스가 SKILL.md를 전문 재첨부하는 상한(약 2만 UTF-16 단위) — 넘으면 뒷부분이 잘린다
+SKILL_REATTACH_LIMIT = 20000
 # SKILL.md 전용: 버전마다 바뀌는 행정규칙일련번호(13자리) 고정 예시 금지 — 자리표시(<행정규칙일련번호>)로
 SKILL_ONLY_PATTERNS: list[tuple[str, str, str | None]] = [
     (r"(?<!\d)2[12]\d{11}(?!\d)", "행정규칙일련번호 고정 예시 — 자리표시로", None),
@@ -147,12 +182,16 @@ def main() -> None:
         m = re.search(r"^name:\s*(\S+)", text, re.M)
         if not m or m.group(1) != sk.name:
             errors.append(f"{sk.name}: frontmatter name 불일치 ({m.group(1) if m else '없음'})")
-        # 비대화 감시: description 한도(공식 1024자) + 본문 줄수 경고(권장 500줄 미만)
+        # 비대화 감시: description 한도(공식 1024자) + 재첨부 한도·본문 줄수 경고(권장 500줄 미만)
         m_desc = re.search(r"^description:\s*(.+)$", text, re.M)
         if m_desc and len(m_desc.group(1).strip()) > 1024:
             errors.append(f"{sk.name}: description {len(m_desc.group(1).strip())}자 — 1024자 한도 초과")
         parts = text.split("---", 2)
         body = parts[2] if len(parts) >= 3 else text
+        n_units = len(text.encode("utf-16-le")) // 2
+        if n_units > SKILL_REATTACH_LIMIT:
+            print(f"WARN {sk.name}: SKILL.md {n_units}자 — 컴팩션 재첨부 한도(약 {SKILL_REATTACH_LIMIT}자) 초과, 뒷부분 잘림",
+                  file=sys.stderr)
         if body.count("\n") > 400:
             print(f"WARN {sk.name}: SKILL.md 본문 {body.count(chr(10))}줄 — 400줄 초과(권장 500줄 미만, references 계층화 검토)",
                   file=sys.stderr)

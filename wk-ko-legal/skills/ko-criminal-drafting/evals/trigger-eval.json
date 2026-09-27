@@ -12,12 +12,12 @@
   {"query": "형사 공판기일변경신청서 써줘. 다음 공판기일에 증인 일정이 겹쳐", "should_trigger": true},
   {"query": "고소이유보충서 써줘. 추가 피고소인이 있어", "should_trigger": true},
 
-  {"query": "대여금 반환 청구 소장 초안 작성해줘. 민사야", "should_trigger": false},
-  {"query": "영업정지 처분 취소 소장 써줘. 행정소송 건이야", "should_trigger": false},
-  {"query": "행위시 시행되던 구 형법 조문 본문 찾아줘", "should_trigger": false},
-  {"query": "사기죄 편취 고의 관련 형사 판례 lbox에서 검색해서 정리해줘", "should_trigger": false},
-  {"query": "회사 컴플라이언스 관련 자문의견서 초안 써줘", "should_trigger": false},
-  {"query": "내 lbox 형사사건 다음 공판기일 언제인지 진행상황 업데이트해줘", "should_trigger": false},
-  {"query": "보석 허가 요건이 뭐야? 설명만 간단히 해줘", "should_trigger": false},
-  {"query": "민사 항소이유서 초안 써줘. 1심에서 대여금 청구가 기각됐어", "should_trigger": false}
+  {"query": "대여금 반환 청구 소장 초안 작성해줘. 민사야", "should_trigger": false, "expected": "ko-civil-litigation-drafting"},
+  {"query": "영업정지 처분 취소 소장 써줘. 행정소송 건이야", "should_trigger": false, "expected": "ko-administrative-drafting"},
+  {"query": "행위시 시행되던 구 형법 조문 본문 찾아줘", "should_trigger": false, "expected": "ko-law-api"},
+  {"query": "사기죄 편취 고의 관련 형사 판례 lbox에서 검색해서 정리해줘", "should_trigger": false, "expected": "lbox-case-search"},
+  {"query": "회사 컴플라이언스 관련 자문의견서 초안 써줘", "should_trigger": false, "expected": "ko-legal-advisory-drafting"},
+  {"query": "내 lbox 형사사건 다음 공판기일 언제인지 진행상황 업데이트해줘", "should_trigger": false, "expected": "none", "note": "등록 사건 관리 — 2.2.0 lbox-case-progress 제거, 담당 스킬 없음. lbox-case-search 오발동 실측(2026-09-27)"},
+  {"query": "보석 허가 요건이 뭐야? 설명만 간단히 해줘", "should_trigger": false, "expected": ["none", "ko-law-api"], "note": "서면 없는 요건 질문"},
+  {"query": "민사 항소이유서 초안 써줘. 1심에서 대여금 청구가 기각됐어", "should_trigger": false, "expected": "ko-civil-litigation-drafting", "note": "민사 상소 서면 — 공통 기준안 7(CIV-25 (a))"}
 ]

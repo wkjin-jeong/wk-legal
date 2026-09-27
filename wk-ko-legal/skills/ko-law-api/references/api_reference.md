@@ -151,8 +151,8 @@
 | `MST` | 법령 마스터번호 | 특정 버전 지정 — 현행 인용은 eflaw `ID`/`LM`, 과거 버전은 eflaw `MST`+`efYd` |
 | `ID` | 법령ID/행정규칙ID/자치법규ID | target에 따라 의미 다름 |
 | `LID` | 행정규칙ID(admrul) | 버전과 무관한 계통 식별자 |
-| `LM` | 정식 법령명·규칙명 | 검색 없이 단발 호출. 약칭 불가('자본시장법' → 일치 없음), 띄어쓰기는 무관(실측) |
-| `JO` | 조문번호 | law·eflaw만 지원. 6자리 zero-padding (예: 제2조 → `000200`, 제390조 → `039000`). admrul·ordin은 무시되고 전문이 온다 — law_api.py가 받은 뒤 해당 조를 발췌 |
+| `LM` | 정식 법령명·규칙명 | 검색 없이 단발 호출. 약칭 불가('자본시장법' → 일치 없음), 띄어쓰기는 무관(실측). law·eflaw·admrul만 — ordin·expc는 정식 명칭도 '일치 없음'이라 law_api.py가 exit 2(search로 번호 확보, 2026-09-27 실측) |
+| `JO` | 조문번호 | law·eflaw만 지원. 6자리 zero-padding (예: 제2조 → `000200`, 제390조 → `039000`). admrul·ordin은 무시되고 전문이 온다 — law_api.py가 받은 뒤 해당 조를 발췌(화면만 — `--save-to` 파일은 발췌 전 전문) |
 | `efYd` | 시행일자 | `YYYYMMDD`. eflaw `MST=`와 함께만 — `ID=`와 함께 보내면 HTTP 500(실측) |
 | `ancYd` | 공포일자 | 서버 미지원 — 무시하고 현행본을 준다(2026-09-26 실측). law_api.py `get --ancyd`는 exit 2 — 과거 본문은 get-asof |
 | `LANG` | 언어 | 무시된다(`LANG=EN`에도 `<언어>한글`). 영문본은 `target=elaw` |
@@ -318,7 +318,7 @@ API는 조문번호를 **6자리 zero-padding 숫자**로 받는다.
 - 검색 결과에 `시행일자`가 미래인 항목(시행예정)이 함께 나올 수 있다. 그보다 위험한 것은 **`현행` 행의 MST로 받은 `target=law` 본문에 미시행 조문이 섞이는 경우**다(1장 주의 참조) — 검색 행의 시행일자만 보고서는 걸러지지 않는다.
 - 판별: 본문 `<기본정보>`의 `<시행일자>` > 오늘, 또는 `<조문시행일자문자열>`에 오늘보다 뒤인 날짜. 공포·시행 순서 역전(뒤에 공포됐으나 먼저 시행된 개정이 공포본에서 빠지는 경우 — 1장 주의)은 이 판별로 잡히지 않는다.
 - 현행 인용은 `target=eflaw`의 `ID=`/`LM=` 본문을 쓴다. law_api.py의 `get --target law`는 `--promulgated`가 없으면 판별과 관계없이 언제나 eflaw로 대체한다.
-- 없는 식별자는 HTTP 200 + `<Law>일치하는 법령이 없습니다. …</Law>`(JSON `{"Law": "…"}`)로 온다 — law_api.py는 exit 2로 종료하고 캐시하지 않는다.
+- 없는 식별자는 HTTP 200 + `<Law>일치하는 법령이 없습니다. …</Law>`(JSON `{"Law": "…"}`)로 온다 — law_api.py는 exit 2로 종료하고 캐시하지 않는다. 단 eflaw JSON은 없는 ID·LM에 '국가법령정보 공동활용 미신청된 목록/본문에 대한 접근입니다' HTML을 준다 — law_api.py는 같은 요청을 XML로 한 번 재확인해 '일치 없음'이면 exit 2로 분류한다(2026-09-27 실측).
 - 시행 예정 개정 본문을 인용해야 한다면 그 사실을 서면에 명시한다("○년 ○월 ○일 시행 예정 개정 ○○법").
 
 ---
@@ -387,7 +387,7 @@ python3 scripts/law_api.py search --target licbyl --query "*" --display 100 --pa
     <별표서식파일링크>/LSW/flDownload.do?flSeq=141824351</별표서식파일링크>          <!-- 원본(보통 HWP) -->
     <별표서식PDF파일링크>/LSW/flDownload.do?flSeq=141824353</별표서식PDF파일링크>    <!-- ✅ PDF 변환본 -->
     <별표법령상세링크>/DRF/lawService.do?OC=...&target=licbyl&ID=16483259&type=HTML</별표법령상세링크>
-    <!-- ↑ 별표 단건 HTML 상세 페이지 — lawService.do?target=licbyl&ID=<별표일련번호> -->
+    <!-- ↑ law.go.kr 화면(iframe)을 가리키는 HTML 껍데기 — 별표 본문 없음(아래 "별표 상세링크") -->
   </licbyl>
 </licBylSearch>
 ```
@@ -429,26 +429,26 @@ python3 scripts/law_api.py search --target licbyl --query "*" --display 100 --pa
   <target>ordinbyl</target>
   <키워드>옥외광고물</키워드>
   <section>ordinBylNm</section>
-  <totalCnt>1375</totalCnt>
+  <totalCnt>1430</totalCnt>
   <page>1</page>
   <ordinbyl id="1">
-    <별표일련번호>19828393</별표일련번호>                      <!-- 별표 자체의 ID -->
+    <별표일련번호>22254835</별표일련번호>                      <!-- 별표 자체의 ID -->
     <관련자치법규일련번호>2037959</관련자치법규일련번호>      <!-- 모법(자치법규) MST -->
     <별표명><![CDATA[(별지 제1호서식) <strong class="tbl_tx_type">옥외</strong>...]]></별표명>
     <!-- ⚠ 별표명 CDATA 안에 검색어 강조용 <strong> 태그가 끼어 있다. 파일명·인용 시 제거 필요. -->
     <관련자치법규명><![CDATA[전라남도 옥외광고물 등의 ...]]></관련자치법규명>
     <별표번호>000400</별표번호>                                <!-- 6자리 zero-padded -->
     <별표종류>서식</별표종류>                                  <!-- "별표" 또는 "서식" -->
-    <지자체기관명>전라남도</지자체기관명>
-    <전체기관명>전라남도</전체기관명>
+    <지자체기관명>(구)전라남도</지자체기관명>
+    <전체기관명>(구)전라남도</전체기관명>
     <자치법규시행일자>20250515</자치법규시행일자>
     <공포일자>20250515</공포일자>
     <공포번호>6253</공포번호>
     <제개정구분명>일부개정</제개정구분명>
-    <별표서식파일링크>/LSW/flDownload.do?gubun=ELIS&amp;flSeq=151851105&amp;flNm=...</별표서식파일링크>
+    <별표서식파일링크>/LSW/flDownload.do?gubun=ELIS&amp;flSeq=167692963&amp;flNm=...</별표서식파일링크>
     <!-- ↑ 다운로드 URL. /LSW/ 경로로 시작하는 상대경로. 호스트 https://www.law.go.kr 붙이면 절대 URL. -->
-    <별표자치법규상세링크>/DRF/lawService.do?OC=...&amp;target=ordinbyl&amp;ID=19828393&amp;type=HTML</별표자치법규상세링크>
-    <!-- ↑ 별표 단건 상세 페이지 URL. lawService.do?target=ordinbyl&ID=<별표일련번호>로 별표 단건 조회 가능. -->
+    <별표자치법규상세링크>/DRF/lawService.do?OC=...&amp;target=ordinbyl&amp;ID=22254835&amp;type=HTML&amp;mobileYn=</별표자치법규상세링크>
+    <!-- ↑ law.go.kr 화면(iframe)을 가리키는 HTML 껍데기 — 별표 본문 없음(아래 "별표 상세링크") -->
   </ordinbyl>
 </licBylSearch>
 ```
@@ -467,14 +467,9 @@ python3 scripts/law_api.py search --target licbyl --query "*" --display 100 --pa
 상대경로(`/LSW/...`, `/DRF/...`)는 자동으로 호스트(`https://www.law.go.kr`)를 붙여 절대화한다.
 실제 응답에서 위에 없는 새 태그명을 발견하면 `BYL_LINK_TAG_HINTS_PDF` 또는 `BYL_LINK_TAG_HINTS_RAW`(scripts/law_api.py)에 추가한다.
 
-### 별표 단건 상세 조회 (보너스)
+### 별표 상세링크
 
-응답에 포함된 `<별표자치법규상세링크>`(또는 유사 필드)는 다음 형식이다.
-```
-/DRF/lawService.do?OC=<oc>&target=ordinbyl&ID=<별표일련번호>&type=HTML
-```
-즉 별표 자체에 대한 상세 페이지 조회 API도 존재(target은 검색과 동일하지만 `lawService.do`에 `ID=<별표일련번호>`를 보냄).
-필요 시 `--type HTML`로 호출하여 별표 본문 HTML을 받을 수 있다.
+`<별표법령상세링크>`·`<별표행정규칙상세링크>`·`<별표자치법규상세링크>`(`lawService.do?target=licbyl|admbyl|ordinbyl&ID=<별표일련번호>&type=HTML`)는 law.go.kr 화면(iframe — `lsBylInfoP.do`·`admRulBylInfoP.do`·`ordinBylInfoP.do`)을 가리키는 3KB 남짓의 껍데기로 별표 본문이 없다(2026-09-27 실측). law_api.py의 `get`도 이 target을 exit 2로 막는다. 현행 파일은 `download`로, 기준일 별표는 `get-asof --byl`(SKILL.md 7.)로 받는다.
 
 ### 다운로드·텍스트 추출 흐름
 
@@ -499,8 +494,8 @@ python3 scripts/law_api.py download --url "/DRF/...별표파일URL..." \
 
 ### 별표·서식 인용 시 유의
 
-- 별표는 형식상 본문의 일부지만, 인용 시 **「○○법」 [별표 ○]** 표기를 사용한다.
-- 서식은 **「○○법 시행규칙」 [별지 제○호서식]** 처럼 표기.
+- 별표는 형식상 본문의 일부지만, 인용 시 **○○법 [별표 ○]** 표기를 사용한다.
+- 서식은 **○○법 시행규칙 [별지 제○호서식]** 처럼 표기(법령명에 「」 없음 — SKILL.md 6.).
 - 별표를 본문에 옮길 때는 표 구조가 깨지지 않게 가능한 한 PDF에서 추출한 텍스트 그대로 옮기고,
   표 형태가 중요하면 PDF 페이지 번호를 함께 명시("별표 1, 2면 표")한다.
 
@@ -608,7 +603,7 @@ python3 scripts/law_api.py get --target expc --id 332741 --text
 계통 확정: 검색은 부분일치라 다른 규정·조례가 섞인다("전자금융감독규정" → 시행세칙, "가평군 옥외광고물" → 발전기금 조례). 섞인 채 고르면 **다른 규정의 본문·시행기간·판례식**이 나온다(2026-09-25 점검 재현). 검색 행의 `법령ID`·`행정규칙ID`·`자치법규ID`는 개정·개명과 무관하게 버전 사이에서 고정되므로 이를 계통으로 쓴다 — ① `--lid <계통ID>` ② 계통이 하나 ③ 어느 버전 명칭이 `--query`와 정확히 같은 계통이 하나 → 자동 선택, 그 밖에는 계통 목록을 보여주고 exit 2.
 
 > `target=lsHistory`는 존재하지 않는다(라이브 검증 — HTML 오류 페이지).
-> 법령 신구법 비교(`target=oldAndNew`, 구조문목록/신조문목록/신구법존재여부)는 공식 가이드가 확보되어 있으나 본 skill에는 미통합(2단계 후보).
+> 법령 신구법 비교(`target=oldAndNew`, 구조문목록/신조문목록/신구법존재여부)는 공식 가이드가 확보되어 있으나 본 skill에는 미통합(2단계 후보). 직전본↔현행본만 비교하므로(MST 276291 실측) 행위시↔현행 대비에는 맞지 않는다 — 그 대비는 SKILL.md 5.5(get-asof와 현행 get을 각각 받아 대조).
 
 ### 자치법규 연혁 (target=ordin, nw)
 

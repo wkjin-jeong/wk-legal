@@ -584,12 +584,24 @@ def _enforce_response_ok(body: str, url: str, html_ok: bool = False) -> None:
         )
         sys.exit(2)
     if not html_ok and looks_like_html_error(body):
+        nf = _json_html_not_found(url)
+        if nf:
+            sys.stderr.write(
+                f"ERROR: 조회 결과 없음 — 같은 조회를 XML로 재확인한 API 응답: \"{nf}\"\n"
+                f"  URL(OC 제외): {_strip_oc_from_url(url)}\n"
+                "  (JSON 요청의 '일치 없음'을 서버가 HTML 페이지로 돌려준 사례 — 인증키 문제가 아닙니다)\n"
+                "  → 식별자를 search로 다시 확인하세요. --lm은 약칭이 아닌 정식 명칭(띄어쓰기 무관)이어야 합니다.\n"
+            )
+            sys.exit(2)
         sys.stderr.write(
             "ERROR: API가 XML/JSON이 아닌 HTML 페이지를 반환했습니다 — "
             "OC(인증키) 미등록·오타, 일일 호출 한도 초과, 또는 파라미터 조합 오류일 수 있습니다.\n"
             f"  URL(OC 제외): {_strip_oc_from_url(url)}\n"
             "  → open.law.go.kr에서 OC 등록 상태를 확인하고, 파라미터를 점검하세요.\n"
         )
+        if "미신청된 목록/본문" in body:
+            sys.stderr.write("  → 응답 문구 '미신청된 목록/본문': 식별자가 없거나 이 target이 JSON을 지원하지 않을 수 "
+                             "있습니다 — --type XML로 재확인하세요.\n")
         sys.exit(3)
     err = find_api_error(body)
     if err:
@@ -605,13 +617,43 @@ def _enforce_response_ok(body: str, url: str, html_ok: bool = False) -> None:
         sys.exit(3)
 
 
+def _json_html_not_found(url: str) -> str | None:
+    """lawService.do JSON 요청이 HTML 페이지로 돌아왔을 때 같은 요청을 XML로 한 번 다시 받아 '일치 없음'이면 그 문구.
+
+    eflaw JSON은 없는 ID·LM에 '일치하는 법령이 없습니다' 대신 '미신청된 목록/본문' HTML을 준다(2026-09-27 실측 —
+    같은 식별자의 XML·law JSON은 '일치 없음'). 그대로 두면 인증키 오류(exit 3)로 오분류된다. 오류 경로에서만 1회 호출한다.
+    """
+    parts = urllib.parse.urlsplit(url)
+    if not parts.path.endswith("/lawService.do"):
+        return None
+    query = urllib.parse.parse_qsl(parts.query, keep_blank_values=True)
+    if not any(k == "type" and v.upper() == "JSON" for k, v in query):
+        return None
+    xq = [(k, "XML" if k == "type" else v) for k, v in query]
+    xurl = urllib.parse.urlunsplit(parts._replace(query=urllib.parse.urlencode(xq, encoding="utf-8")))
+    return _find_not_found(http_get(xurl, no_cache=True))
+
+
+def _strip_ws_nodes(node) -> None:
+    """공백뿐인 텍스트 노드를 재귀로 지운다 — lawService XML의 줄바꿈 공백에 toprettyxml이 빈 줄을 더하지 않도록."""
+    for child in list(node.childNodes):
+        if child.nodeType == child.TEXT_NODE and not child.data.strip():
+            node.removeChild(child)
+        elif child.hasChildNodes():
+            _strip_ws_nodes(child)
+
+
 def maybe_pretty(body: str, fmt: str) -> str:
-    """XML/JSON이면 pretty-print, 그 외(HTML 등)는 원본 반환."""
+    """XML/JSON이면 pretty-print, 그 외(HTML 등)는 원본 반환.
+
+    XML은 minidom을 쓴다(CDATA 보존 — ET.indent는 CDATA를 풀어 쓴다). 선언의 encoding="UTF-8"을 유지한다.
+    """
     fmt = fmt.upper()
     try:
         if fmt == "XML":
             dom = xml.dom.minidom.parseString(body)
-            return dom.toprettyxml(indent="  ", encoding=None)
+            _strip_ws_nodes(dom)
+            return dom.toprettyxml(indent="  ", encoding="UTF-8").decode("utf-8")
         if fmt == "JSON":
             return json.dumps(json.loads(body), ensure_ascii=False, indent=2)
     except Exception:
@@ -672,14 +714,20 @@ def cmd_search(args: argparse.Namespace) -> None:
     _emit(body, url, args, None if args.raw else (lambda b: _search_table(b, args.target, display)))
 
 
-def _emit(body: str, url: str, args: argparse.Namespace, render=None) -> None:
+def _emit(body: str, url: str, args: argparse.Namespace, render=None, raw: str | None = None) -> None:
     """응답 출력·저장 공통 경로 — 본문에 echo된 OC(상세링크 등)를 가린 뒤 내보낸다.
 
     render가 있으면(search 표·get --text) 화면에는 그 결과를, --save-to 파일에는 원시 응답을 쓴다
-    (download --from-search-xml 등 원시 XML을 읽는 경로와의 호환).
+    (download --from-search-xml 등 원시 XML을 읽는 경로와의 호환). raw가 있으면(admrul·ordin --jo 발췌)
+    화면에는 발췌본(body)을, --save-to 파일에는 발췌 전 원시 응답(raw — 부칙·별표 포함)을 쓴다.
     """
     body = _mask_oc_in_body(body, url)
     output = maybe_pretty(body, args.type) if args.pretty else body
+    if raw is not None:
+        raw = _mask_oc_in_body(raw, url)
+        saved = maybe_pretty(raw, args.type) if args.pretty else raw
+    else:
+        saved = output
     shown = None
     if render is not None:
         if args.type.upper() != "XML":
@@ -691,7 +739,7 @@ def _emit(body: str, url: str, args: argparse.Namespace, render=None) -> None:
     print(shown if shown is not None else output)
     if args.save_to:
         with open(args.save_to, "w", encoding="utf-8") as f:
-            f.write(output)
+            f.write(saved)
 
 
 # ---------------------------------------------------------------------------
@@ -955,8 +1003,8 @@ def cmd_get(args: argparse.Namespace) -> None:
     #           --promulgated가 없으면 언제나 시행일 기준 본문(eflaw)으로 대체)
     # - eflaw:  ID(=법령ID) 또는 LM → 현행 시행본 / MST+efYd → 특정 시행 버전
     # - admrul: ID(=행정규칙일련번호, 긴 숫자) 또는 LID 또는 LM
-    # - ordin:  MST(=자치법규일련번호) 또는 ID(=자치법규ID) 또는 LM
-    # - expc:   ID(=법령해석례일련번호) 또는 LM(=안건명)
+    # - ordin:  MST(=자치법규일련번호) 또는 ID(=자치법규ID) — LM(명칭)은 API가 지원하지 않는다(정식 명칭도 '일치 없음')
+    # - expc:   ID(=법령해석례일련번호) — LM(안건명)도 지원하지 않는다(2026-09-27 실측)
     if args.target == "eflaw":
         if args.id or args.lm:
             if args.efyd:
@@ -986,15 +1034,18 @@ def cmd_get(args: argparse.Namespace) -> None:
             )
             sys.exit(2)
     elif args.target == "ordin":
-        if not (args.mst or args.id or args.lm):
+        if args.lm or not (args.mst or args.id):
             sys.stderr.write(
-                "ERROR (target=ordin): --mst(=자치법규일련번호) / --id(=자치법규ID) / --lm 중 하나는 필수.\n"
+                "ERROR (target=ordin): --mst(=자치법규일련번호) 또는 --id(=자치법규ID)가 필요합니다 — 명칭 조회(--lm)는 "
+                "API가 지원하지 않습니다(정식 명칭도 '일치 없음').\n"
+                "  → 'search --target ordin --query <조례명>'으로 자치법규일련번호를 확보하세요.\n"
             )
             sys.exit(2)
     elif args.target == "expc":
-        if not (args.id or args.lm):
+        if args.lm or not args.id:
             sys.stderr.write(
-                "ERROR (target=expc): --id(=법령해석례일련번호) / --lm(=안건명) 중 하나는 필수.\n"
+                "ERROR (target=expc): --id(=법령해석례일련번호)가 필요합니다 — 안건명 조회(--lm)는 API가 지원하지 않습니다.\n"
+                "  → 'search --target expc --query <검색어>'로 법령해석례일련번호를 확보하세요.\n"
             )
             sys.exit(2)
     elif args.target == "admrul":
@@ -1055,8 +1106,9 @@ def cmd_get(args: argparse.Namespace) -> None:
         sys.stderr.write("NOTE: type=HTML은 공포본을 그대로 출력합니다 — 미시행 내용이 섞이거나 뒤에 공포됐으나 먼저 "
                          "시행된 개정이 빠질 수 있습니다. 현행 인용은 XML/JSON 또는 target=eflaw.\n")
 
+    raw = None
     if args.jo and args.target in LOCAL_JO_TARGETS:
-        body = _extract_articles(body, args.target, args.jo, args.type)
+        raw, body = body, _extract_articles(body, args.target, args.jo, args.type)   # --save-to는 발췌 전 전문
 
     if args.byl:
         _emit_byl(body, url, args)
@@ -1064,7 +1116,7 @@ def cmd_get(args: argparse.Namespace) -> None:
     if args.addenda is not None:
         _emit_addenda(body, url, args, _addenda_nums(args.addenda))
         return
-    _emit(body, url, args, _body_text if args.text else None)
+    _emit(body, url, args, _body_text if args.text else None, raw=raw)
 
 
 def _elaw_articles(body: str, jo: str) -> tuple[list[str], str]:
@@ -2706,12 +2758,13 @@ def cmd_get_asof(args: argparse.Namespace) -> None:
     if body is None:
         body, url = _fetch_with_jo(params["target"], params, args.jo, args.type, args.no_cache,
                                    missing_hint=missing_hint)
+    raw = None
     if args.jo and args.target in LOCAL_JO_TARGETS:
-        body = _extract_articles(body, args.target, args.jo, args.type)
+        raw, body = body, _extract_articles(body, args.target, args.jo, args.type)   # --save-to는 발췌 전 전문
     if args.byl:
         _emit_byl(body, url, args)
         return
-    _emit(body, url, args, _body_text if args.text else None)
+    _emit(body, url, args, _body_text if args.text else None, raw=raw)
 
 
 # ---------------------------------------------------------------------------
@@ -2825,7 +2878,8 @@ def make_parser() -> argparse.ArgumentParser:
     g.add_argument("--mst", help="법령일련번호(law) / 버전 MST(eflaw, --efyd와 함께) / 자치법규일련번호(ordin)")
     g.add_argument("--id", dest="id", help="법령ID(law·eflaw) / 행정규칙일련번호(admrul) / 자치법규ID(ordin) / 해석례일련번호(expc)")
     g.add_argument("--lid", help="행정규칙ID (admrul)")
-    g.add_argument("--lm", help="정식 법령명·규칙명 (약칭 불가, 띄어쓰기 무관)")
+    g.add_argument("--lm", help="정식 법령명·규칙명 (약칭 불가, 띄어쓰기 무관) — law·eflaw·admrul·admrulOldAndNew "
+                                "전용(ordin·expc는 API 미지원 — search로 번호 확보)")
     g.add_argument("--jo", help="조문번호 (예: 390, '제390조', '제10조의2'; admrul은 편·장식 '7-14', '제7-14조의2'도). "
                                 "admrul·ordin은 받은 본문에서 발췌")
     g.add_argument("--promulgated", action="store_true",

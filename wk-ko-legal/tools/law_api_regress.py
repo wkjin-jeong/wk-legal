@@ -458,6 +458,69 @@ def offline() -> None:
         check("키 파일: 키 없는 cwd .env 건너뜀·다른 키 미주입", r.stdout.split() == ["from_config", "None", "None"],
               r.stdout + r.stderr[-200:])
 
+    # LAW-19 키 파일 탐색: ./.env → scripts/.env → 스킬 폴더 .env (SKILL.md 2.2 표와 같은 순서)
+    with tempfile.TemporaryDirectory() as t:
+        sk = os.path.join(t, "skill")
+        os.makedirs(os.path.join(sk, "scripts"))
+        os.makedirs(os.path.join(t, "work"))
+        os.makedirs(os.path.join(t, "home"))
+        shutil.copy(SCRIPT, os.path.join(sk, "scripts", "law_api.py"))
+        for d, v in ((os.path.join(sk, "scripts"), "from_scripts"), (sk, "from_skill")):
+            with open(os.path.join(d, ".env"), "w") as f:
+                f.write(f"LAW_GO_KR_OC={v}\n")
+        kenv = {**clean, "HOME": os.path.join(t, "home"), "PYTHONPATH": os.path.join(sk, "scripts")}
+        r1 = subprocess.run([sys.executable, "-c", code], cwd=os.path.join(t, "work"), env=kenv,
+                            capture_output=True, text=True)
+        os.remove(os.path.join(sk, "scripts", ".env"))
+        r2 = subprocess.run([sys.executable, "-c", code], cwd=os.path.join(t, "work"), env=kenv,
+                            capture_output=True, text=True)
+        with open(os.path.join(ROOT, "skills", "ko-law-api", "SKILL.md"), encoding="utf-8") as f:
+            doc_ok = "`./.env` → `scripts/.env` → 스킬 폴더 `.env`" in f.read()
+        check("LAW-19 키 파일: scripts/.env → 스킬 폴더 .env 순서·SKILL.md 표 일치",
+              r1.stdout.split()[:1] == ["from_scripts"] and r2.stdout.split()[:1] == ["from_skill"] and doc_ok,
+              r1.stdout + r2.stdout + r1.stderr[-200:])
+
+    # LAW-17 ordin·expc --lm은 API 미지원 → exit 2·search 안내(번호 조회는 통과)
+    l1 = subprocess.run([sys.executable, SCRIPT, "--dry-run", "get", "--target", "ordin", "--lm", "X"],
+                        env=denv, capture_output=True, text=True)
+    l2 = subprocess.run([sys.executable, SCRIPT, "--dry-run", "get", "--target", "expc", "--lm", "X"],
+                        env=denv, capture_output=True, text=True)
+    l3 = subprocess.run([sys.executable, SCRIPT, "--dry-run", "get", "--target", "ordin", "--mst", "2023185"],
+                        env=denv, capture_output=True, text=True)
+    l4 = subprocess.run([sys.executable, SCRIPT, "--dry-run", "get", "--target", "expc", "--id", "332741"],
+                        env=denv, capture_output=True, text=True)
+    check("LAW-17 ordin·expc --lm → exit 2·search 안내, --mst·--id 통과", l1.returncode == 2 and l2.returncode == 2
+          and "search --target ordin" in l1.stderr and "search --target expc" in l2.stderr and not l1.stdout
+          and l3.returncode == 0 and "MST=2023185" in l3.stdout and l4.returncode == 0 and "ID=332741" in l4.stdout,
+          l1.stderr[-200:] + l2.stderr[-200:])
+
+    # LAW-18 --pretty: 공백 텍스트 노드에 빈 줄을 더하지 않고 선언의 encoding·CDATA 유지
+    o = L.maybe_pretty('<?xml version="1.0" encoding="UTF-8"?><a>\n  <b>1</b>\n  <c><![CDATA[x < y]]></c>\n</a>', "XML")
+    lines = o.splitlines()
+    check("LAW-18 --pretty 빈 줄 0·encoding 유지·CDATA 보존", sum(1 for x in lines if not x.strip()) == 0
+          and lines[0] == '<?xml version="1.0" encoding="UTF-8"?>' and "<![CDATA[x < y]]>" in o, o)
+
+    # LAW-15 --save-to는 발췌 전 원시 응답(admrul·ordin --jo) — 화면은 발췌본
+    import argparse as _ap15
+    with tempfile.TemporaryDirectory() as t:
+        sv = os.path.join(t, "sv.xml")
+        a15 = _ap15.Namespace(pretty=False, type="XML", save_to=sv)
+        raw15 = "<LawService><조문><조문번호>1</조문번호></조문><조문><조문번호>2</조문번호></조문><부칙/></LawService>"
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            L._emit("<LawService><조문><조문번호>1</조문번호></조문></LawService>",
+                    "https://www.law.go.kr/DRF/lawService.do?OC=k&target=ordin", a15, raw=raw15)
+        with open(sv, encoding="utf-8") as f:
+            saved = f.read()
+        check("LAW-15 _emit: 화면 발췌본·저장본 원시 전문", saved == raw15 and "<조문번호>2" not in out.getvalue(),
+              saved + " / " + out.getvalue())
+
+    # LAW-16 JSON→HTML 재확인은 lawService.do·type=JSON 요청에만(그 밖은 호출 없이 None)
+    check("LAW-16 XML 재확인 대상 판정(호출 없음)",
+          L._json_html_not_found("https://www.law.go.kr/DRF/lawSearch.do?OC=k&target=law&type=JSON") is None
+          and L._json_html_not_found("https://www.law.go.kr/DRF/lawService.do?OC=k&target=eflaw&type=XML&ID=1")
+          is None)
+
     # get-asof 기준일이 오늘 뒤면 시행예정(nw=2)까지 검색 — 시행예정 판본을 고르도록(P2 교차 점검)
     import argparse as _ap
     today = L._today()
@@ -731,6 +794,42 @@ def live() -> None:
             check("get-asof 미래 기준일 → 시행예정본(MST 285053)·'시행예정본' 안내·구법 표기 안내 없음",
                   r.returncode == 0 and "MST 285053" in r.stderr and "시행예정본" in r.stderr
                   and "구법 표기" not in r.stderr, r.stderr[-300:])
+        # LAW-13 신·구법 대비 레시피(SKILL.md 5.5) — 형법 제347조, 기준일 2025. 12. 22. ↔ 현행
+        r = run(["get-asof", "--lid", "001692", "--date", "20251222", "--jo", "347", "--text"], env=env)
+        c = run(["get", "--target", "eflaw", "--id", "001692", "--jo", "347", "--text"], env=env)
+        check("LAW-13 신·구법 대비: 구법 10년·2천만원 ↔ 현행 20년·5천만원",
+              r.returncode == 0 and "10년 이하의 징역 또는 2천만원 이하의 벌금" in r.stdout and "제21231호" in r.stderr
+              and c.returncode == 0 and "20년 이하의 징역 또는 5천만원 이하의 벌금" in c.stdout,
+              r.stderr[-200:] + c.stdout[-200:])
+        # LAW-15 admrul·ordin --jo --save-to → 저장본은 전문(부칙 포함), 화면은 그 조만
+        with tempfile.TemporaryDirectory() as t:
+            sv, full = os.path.join(t, "sv.xml"), os.path.join(t, "full.xml")
+            r = run(["get", "--target", "ordin", "--mst", "2023185", "--jo", "1", "--text", "--save-to", sv], env=env)
+            f = run(["get", "--target", "ordin", "--mst", "2023185", "--save-to", full], env=env)
+            with open(sv, encoding="utf-8") as fh:
+                s_sv = fh.read()
+            with open(full, encoding="utf-8") as fh:
+                s_full = fh.read()
+            check("LAW-15 ordin --jo --save-to 전문 저장·화면 제1조만", r.returncode == 0 and f.returncode == 0
+                  and s_sv == s_full and s_sv.count("<조문번호>") > 1 and "부칙" in s_sv and "제1조(" in r.stdout
+                  and "제2조(" not in r.stdout and leaks(s_sv) == 0, f"{len(s_sv)}B/{len(s_full)}B")
+            a = os.path.join(t, "a.xml")
+            r = run(["get", "--target", "admrul", "--id", "2100000282622", "--jo", "7", "--save-to", a], env=env)
+            with open(a, encoding="utf-8") as fh:
+                s_a = fh.read()
+            check("LAW-15 admrul --jo 7 --save-to 전문 저장", r.returncode == 0 and r.stdout.count("<조문내용>") == 1
+                  and s_a.count("<조문내용>") > 1, f"{r.stdout.count('<조문내용>')}/{s_a.count('<조문내용>')}")
+        # LAW-16 eflaw JSON 일치 없음(서버 HTML) → XML 재확인 → exit 2, 정상 식별자는 exit 0
+        r = run(["get", "--target", "eflaw", "--id", "998877", "--type", "JSON", "--no-cache"], env=env)
+        ok = run(["get", "--target", "eflaw", "--id", "001706", "--type", "JSON", "--jo", "390"], env=env)
+        check("LAW-16 eflaw JSON 없는 ID → exit 2 '조회 결과 없음'(OC 오분류 아님), 정상 ID exit 0",
+              r.returncode == 2 and "조회 결과 없음" in r.stderr and "OC(인증키) 미등록" not in r.stderr
+              and ok.returncode == 0 and leaks(r.stderr, ok.stdout) == 0, r.stderr[-300:])
+        # LAW-18 --pretty 빈 줄 ≤1·encoding
+        r = run(["get", "--target", "eflaw", "--id", "010199", "--jo", "9", "--pretty"], env=env)
+        check("LAW-18 --pretty 라이브: 빈 줄 ≤1·encoding 유지", r.returncode == 0
+              and sum(1 for x in r.stdout.splitlines() if not x.strip()) <= 1
+              and r.stdout.startswith('<?xml version="1.0" encoding="UTF-8"?>'), r.stdout[:120])
         cowork(key, env)
     finally:
         shutil.rmtree(cache, ignore_errors=True)

@@ -4,9 +4,12 @@
 
 - **검색 결과 0건 / 카드 0건**: 우선 (ⓐ) 결과 패널이 닫혔는지 본다 — timeline의 **검색 카드**(돋보기 아이콘 + 검색어)를 클릭하면 패널이 다시 열린다. (ⓑ) **판례 탭**이 선택돼 있는지 본다(결정례·법령 등 다른 탭이면 판례 탭 클릭). (ⓒ) 같은 작업에서 재제출했다면 이전 검색의 필터가 이어져 0건일 수 있다 — "적용된 필터 N개"·선고일 칩을 풀거나 조정한다(실측: 날짜 칩 하나 해제로 0 → 113개). 입력창에 직전 검색어가 이어 붙지 않았는지도 본다(`references/extraction.md` 1-1). (ⓓ) 그래도 0건이면 검색어가 너무 길거나 구체적인 경우다 — 키워드를 짧게 줄여 컴포저에 다시 제출한다.
 
-- **검색 모드가 안 잡힘 / "자동"으로만 실행됨**: 컴포저 제출 전에 **돋보기(검색) 아이콘**을 클릭해 하이라이트(흰 둥근 박스)가 생긴 것을 `zoom`으로 확인한 뒤 제출한다. "자동"으로도 검색형 질의는 검색으로 가지만, 결과 패널이 안 뜨면 검색 모드를 명시 선택해 다시 제출한다.
+- **검색 모드가 안 잡힘 / "자동"으로만 실행됨**: 컴포저 제출 전에 **돋보기(검색) 아이콘**을 클릭해 하이라이트(둥근 강조 박스 — 테마에 따라 흰색 또는 회색)가 생긴 것을 `zoom`으로 확인한 뒤 제출한다. "자동"으로도 검색형 질의는 검색으로 가지만, 결과 패널이 안 뜨면 검색 모드를 명시 선택해 다시 제출한다.
 
-- **`Runtime.evaluate timed out` (45초)**: `navigate`나 제출 클릭 **직후** 곧바로 `javascript_tool`을 부르면 렌더링과 충돌해 timeout이 난다. batch 안에서 이동·클릭 뒤에 `computer` `wait` 2~3초를 넣는 것이 기본이다(`references/extraction.md` 0장). 그래도 timeout이면 그 페이지만 이동/클릭과 추출을 별개 호출로 나누고 텀을 늘린다. 두 번 이상 retry해도 실패하면 그 카드는 건너뛴다. **JS 내부에 대기 루프를 넣지 말 것**(기다림은 `computer` `wait`로, JS 안의 짧은 대기는 최상위 `await`로 — async IIFE는 `{}`가 돌아온다).
+- **`Runtime.evaluate timed out` (45초) / `{"code":-32603,"message":"Internal error"}`**: 증상 문구로 둘을 가른다.
+  - `CDP sendCommand "Runtime.evaluate" timed out after 45000ms`: 렌더러가 바쁠 때(`navigate`·클릭·제출 직후) JS를 부른 것이다. batch 안에서 이동·클릭 뒤에 `computer` `wait` 2~3초를 넣는 것이 기본이다(`references/extraction.md` 0장). 그래도 timeout이면 그 페이지만 이동/클릭과 추출을 별개 호출로 나누고 텀을 늘린다. 두 번 이상 retry해도 실패하면 그 카드는 건너뛴다.
+  - `Failed to execute JavaScript: {"code":-32603,"message":"Internal error"}`: 추출 JS 자체가 약 40초를 넘어 강제 종료된 것이다(2026-09-26/27 실측 40,007~40,023ms). JS 안의 대기 루프와 과도한 DOM 순회를 없애고, 대기는 `computer` `wait`로 한다. 페이지는 정상 응답하므로 다시 `navigate`할 필요는 없고, 같은 JS를 그대로 재시도하지 않는다.
+  - 공통: **JS 내부에 대기 루프를 넣지 말 것**(기다림은 `computer` `wait`로, JS 안의 짧은 대기는 최상위 `await`로 — async IIFE는 `{}`가 돌아온다).
 
 - **본문이 비어 보임 / `innerText`가 작음**: 개편 후 본문은 DOM에 정상 적재되므로 보통 비지 않는다. 적재 판정은 `innerText`가 아니라 **`references/extraction.md` 2장 (1)의 `recoveredLen`/`mainCount`/`judges`** 로 한다. 단락 추출은 `data-node-id="lbox-paragraph-main-*"` 셀렉터로 한다 — 페이지 전체를 `get_page_text`로 읽으면 2벌 렌더·사이드바가 섞인다(`get_page_text`는 반환 규약으로 내놓은 결과를 받을 때만 쓴다). **개편 전의 `<script>` 페이로드 복원은 쓰지 말 것** — 다른 사건 텍스트가 노이즈로 섞인다.
 
@@ -22,7 +25,7 @@
 
 - **화면에 JSON 글자만 보임 / 클릭이 안 먹힘**: 내놓은 뒤 복구를 하지 않았다. 0장의 복구 JS를 실행한다. 그래도 이상하면 같은 URL로 다시 `navigate`한다(작업 페이지는 백그라운드 탭에서 화면을 한 번 그려야 적재되므로 `references/extraction.md` 0장-5의 재진입 절차(`zoom` 1회 뒤 대기)를 따르고, 결과 패널이 닫혀 있으면 timeline 검색 카드를 눌러 다시 연다).
 
-- **`Tab not found`**: 탭이 닫혔거나 ID가 바뀌었다. `tabs_context_mcp`로 현재 탭 ID를 다시 확인하고 navigate한다.
+- **`Tab … is not in Claude's tab group` / `Tab not found`**: 탭이 닫혔거나 이 세션의 탭 그룹 밖이거나 ID가 바뀌었다. `tabs_context_mcp`로 현재 탭 ID를 다시 확인하고 navigate한다.
 
 - **페이지 번호 JS가 `clicked:false`**: `{advanced:true}`면 ›로 다음 5페이지 묶음을 넘긴 것이므로 `wait` 2초 뒤 같은 JS를 다시 보낸다. `{lastBlock:true}`면 N이 마지막 페이지를 넘은 것이므로 순회를 끝낸다. »(마지막 페이지로 이동)는 누르지 않는다 — 중간 페이지를 건너뛴다(`references/extraction.md` 1-3).
 

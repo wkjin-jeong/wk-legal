@@ -1,6 +1,6 @@
 ---
 name: lbox-commentary-search
-description: lbox.kr에서 사용자 질의와 관련된 주석서·실무서 섹션을 검색하고 본문을 조회하여 markdown 보고서로 정리합니다. 'lbox 주석서', '민법 주석서에서 찾아줘', '주석서 검색', '실무서 검색' 등 요청 시 반드시 이 Skill을 사용하세요. 법령 한정(민법·민사소송법·상법·형법 등)·문서유형(주석서/실무서)을 선택 지정할 수 있습니다.
+description: lbox.kr에서 사용자 질의와 관련된 주석서·실무서 섹션을 검색하고 본문을 조회하여 markdown 보고서로 정리합니다. 'lbox 주석서', '민법 주석서에서 찾아줘', '주석서 검색', '실무서 검색' 등 요청 시 반드시 이 Skill을 사용하세요. 법령 한정(민법·민사소송법·상법·형법 등)·문서유형(주석서/실무서)을 선택 지정할 수 있습니다. 판례·판결문 검색은 lbox-case-search 담당.
 ---
 
 # lbox-commentary-search
@@ -9,7 +9,7 @@ lbox.kr 주석서·실무서 검색에서 사용자 질의와 관련된 주석�
 
 이 Skill은 `lbox-case-search`(판례 검색)의 자매 Skill이며, 같은 lbox.kr 개편판 Chrome 자동화 패턴을 따릅니다.
 
-> lbox.kr 2026.6 개편판 기준입니다 — 검색은 홈 컴포저 "검색" 모드 → 작업(Task) → 결과 패널의 "주석·실무서" 탭, 법령은 이름·문서유형 필터로 좁히고, 본문은 `/book/{bookId}?tocId=…&nodeId=…&volumeHistoryId=…`(2벌 렌더 — node-id dedup, PDF형 실무서는 `?page=N`). 개편 전 방식(`/v2/search/commentary`, 숫자 `statute` 코드)은 쓰지 마세요.
+> lbox.kr 2026.6 개편판 기준입니다 — 검색은 홈 컴포저 "검색" 모드 → 작업(Task) → 결과 패널의 "주석·실무서" 탭, 법령은 이름·문서유형 필터로 좁히고, 본문은 `/book/{bookId}?tocId=…&nodeId=…&volumeHistoryId=…`(node-id 중복 제거는 보험, PDF형 실무서는 `?page=N`). 개편 전 방식(`/v2/search/commentary`, 숫자 `statute` 코드)은 쓰지 마세요.
 
 ## 사전 조건 및 환경 점검
 
@@ -39,7 +39,7 @@ lbox.kr 로그인 + 주석·실무서 **구독이 항상 활성**이라고 전�
 
 > **이동·추출은 batch 한 번에**: 클릭·`navigate` 직후 곧바로 JS를 실행하면 timeout이 날 수 있으므로, 같은 batch 안에서 `computer` `wait` 2~3초를 먼저 넣고 추출합니다(`references/extraction.md` 0장).
 
-법령·문서유형으로 좁히려면: (ⓐ) 주석·실무서 탭의 필터 칩(있으면 문서유형·법령)을 사용하거나, (ⓑ) 결과 단계에서 유형은 **docType**, 법령은 **도서명·breadcrumb**으로 선별하거나, (ⓒ) `https://lbox.kr/book/list`(문서유형·법령 필터가 있는 도서 목록)에서 대상 도서를 먼저 확인합니다. 자세한 건 `references/filter-map.md`.
+법령·문서유형으로 좁히려면: (ⓐ) 주석·실무서 탭의 유형 칩과 '법령별 도서목록' 모달을 사용하거나, (ⓑ) 결과 단계에서 유형은 **docType**, 법령은 **도서명·breadcrumb**으로 선별하거나, (ⓒ) `https://lbox.kr/book/list`(문서유형·법령 필터가 있는 도서 목록)에서 대상 도서를 먼저 확인합니다. 자세한 건 `references/filter-map.md`.
 
 ### 3단계: 카드 추출 및 페이지 순회
 
@@ -75,7 +75,7 @@ PDF형 실무서(`bodyType` `pdf`)는 `https://lbox.kr/book/{bookId}?page={page}
 
 (카드 href를 그대로 navigate해도 됩니다 — 단 JS 결과에 raw href를 담아 반환하면 `[BLOCKED]`가 나므로, 식별자는 **분해된 필드로** 받아 URL을 구성합니다. `references/extraction.md` 1장.)
 
-섹션 추출 메커니즘(URL의 `nodeId`에 해당하는 `[data-node-id]` 헤더부터 다음 `[data-viewer-type="header"]` 전까지 형제 수집, **2벌 렌더 dedup**, 섹션이 큰 챕터일 수 있어 전문은 window 변수에 저장하고 **질의 키워드 인근 발췌**로 반환)은 `references/extraction.md` 2장을 이 시점에 읽고 그대로 사용합니다.
+섹션 추출 메커니즘(URL의 `nodeId`에 해당하는 `[data-node-id]` 헤더부터 다음 `[data-viewer-type="header"]` 전까지 형제 수집, node-id 중복 제거(보험), 섹션이 큰 챕터일 수 있어 전문은 window 변수에 저장하고 **질의 키워드 인근 발췌**로 반환)은 `references/extraction.md` 2장을 이 시점에 읽고 그대로 사용합니다.
 
 #### 5.1 본문이 빈약할 때 — 같은 조문/장의 하위 노드 추가
 
@@ -89,7 +89,7 @@ PDF형 실무서(`bodyType` `pdf`)는 `https://lbox.kr/book/{bookId}?page={page}
 
 #### 5.2 본문 추출 실패 시
 
-- `header not found`: nodeId가 viewer에서 안 잡힘(로드 미완·UI 변경). 한 번 retry 후 실패면 그 카드 건너뜀. `[data-node-id]`가 0개이고 `.rpv-core__viewer`가 있으면 PDF형(구조 차이)이므로 retry하지 말고 `references/extraction.md` 2-2로.
+- `header not found`: JS가 함께 내는 진단값으로 원인을 가른다(`references/extraction.md` 2-1). `nodeCount` 0이면 로드 미완(`wait` 뒤 1회 retry) 또는 PDF형(`pdfViewer` true — retry하지 말고 2-2로). `viewerHeaders`가 있는데 대상만 없고 카드 스니펫이 섹션 제목 그대로면 절·장 제목 노드다 — retry하지 말고 같은 breadcrumb의 첫 하위 노드 카드로 가거나 `firstHeader`부터 읽는다. 그 밖에는 한 번 retry 후 실패면 그 카드 건너뜀.
 - 섹션 길이 0 또는 200자 미만: retry 후에도 실패면 건너뜀(구독은 활성 전제이므로 구독 안내 표시 안 함).
 
 #### 5.3 인용 조문·판례 재검증과 추가 단서
@@ -120,7 +120,7 @@ PDF형 실무서(`bodyType` `pdf`)는 `https://lbox.kr/book/{bookId}?page={page}
 
 #### 인용·발췌 가이드
 
-lbox.kr은 구독자에게 본문 직접 인용을 허용합니다. 분량을 임의 제한하지 않되 가독성을 위해: **핵심 부분은 직접 인용(`"..."`)**, 그 외는 요약, **출처는 도서명·저자(편집대표)·판본까지 표기**(예: `[김용덕 편, 민법 채권각칙 제6권, 한국사법행정학회 제5판, 2021]`), **본문에서 확인되지 않은 내용 금지**. 주석서가 인용한 조문·판례는 5.3으로 재검증한 뒤에만 단정합니다.
+lbox.kr은 구독자에게 본문 직접 인용을 허용합니다. 분량을 임의 제한하지 않되 가독성을 위해: **핵심 부분은 직접 인용(`"..."`)**, 그 외는 요약, **출처는 도서명과 위치로 인라인 인용하고 저자(편집대표)·판본은 "참고 주석서" 절에 표기**(예: `[김용덕 편, 민법 채권각칙 제6권, 제○조 해설 Ⅲ. 1.]` — 보고서용 형식이다. 서면에 옮길 때의 형식은 `references/report-format.md` 출처 표기 원칙), **본문에서 확인되지 않은 내용 금지**. 주석서가 인용한 조문·판례는 5.3으로 재검증한 뒤에만 단정합니다.
 
 #### 파일 안내
 
@@ -128,5 +128,5 @@ lbox.kr은 구독자에게 본문 직접 인용을 허용합니다. 분량을 �
 
 ## 문제 발생 시
 
-증상별 대응은 `references/troubleshooting.md` 참조. 핵심: ① 본문은 `data-node-id`/`data-viewer-type="header"` 형제 수집으로 읽고 **2벌 렌더는 node-id로 dedup**(PDF형 실무서는 `references/extraction.md` 2-2), ② `navigate`/클릭 뒤에는 batch 안에서 `computer` `wait`로 기다린 뒤 추출(timeout이 나면 그 페이지만 분리 호출), ③ 결과 JSON에 raw URL·쿼리스트링·검색 키워드를 담지 말 것(`[BLOCKED]` 회피), ④ "주석·실무서"는 **패널 탭**을 누를 것(좌측 내비 링크 아님).
+증상별 대응은 `references/troubleshooting.md` 참조. 핵심: ① 본문은 `data-node-id`/`data-viewer-type="header"` 형제 수집으로 읽고 이미 본 node-id는 건너뜀(중복 렌더 대비, PDF형 실무서는 `references/extraction.md` 2-2), ② `navigate`/클릭 뒤에는 batch 안에서 `computer` `wait`로 기다린 뒤 추출(`Runtime.evaluate timed out`이면 그 페이지만 분리 호출, `-32603 Internal error`면 JS가 약 40초를 넘은 것이니 JS 안 대기·순회를 줄임), ③ 결과 JSON에 raw URL·쿼리스트링·검색 키워드를 담지 말 것(`[BLOCKED]` 회피), ④ "주석·실무서"는 **패널 탭**을 누를 것(좌측 내비 링크 아님).
 

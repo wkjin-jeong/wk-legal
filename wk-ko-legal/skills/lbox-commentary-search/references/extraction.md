@@ -10,8 +10,8 @@ SKILL.md 본문이 지시하는 시점에 해당 장만 읽는다. 모든 셀렉
 2. **복구 JS**: `if (window.__origBody) { document.body = window.__origBody; window.__origBody = null; } 'restored'` — 떼어 둔 원래 body를 그대로 되돌리므로 페이지 상태·이벤트가 유지된다(2026-09-26 실측: lbox 작업 결과 패널·판례 본문, bigcase 검색 결과 — 복구 뒤 페이지 넘기기·사이드바 펼치기 정상). **복구 전에는 `computer` 클릭·`screenshot`을 하지 않는다**(빈 화면을 누르게 된다). 아래 JS는 모두 첫 줄에서 먼저 복구하므로, batch가 중간에 끊겨도 다음 JS가 되살린다.
 3. 한 번에 내놓는 양은 12,000자 안팎까지로 한다(컨텍스트 절약). 더 필요하면 범위를 옮겨 다시 내놓는다 — `window.__lboxCommentary`·`window.__lboxSection`에 저장해 둔 값에서 자르면 DOM을 다시 읽지 않아도 된다. 1,000자보다 확실히 작은 결과(탭 클릭 여부·건수 등)는 그대로 반환해도 된다.
 4. `get_page_text`에 JSON이 아니라 원래 페이지 글이 나오면 내놓기가 안 된 것이다 — 추출 JS의 반환값(`OUT n자`인지 오류인지)을 보고 다시 보낸다. 페이지 전체를 `get_page_text`로 읽어 본문을 얻으려 하지 않는다(사이드바·메뉴가 섞인다).
-5. **렌더 대기·재시도**: 이동·클릭 직후 곧바로 JS를 실행하면 렌더링과 충돌해 `Runtime.evaluate timed out`(45초)이 날 수 있어 batch 안에 `wait`를 먼저 둔다(2026-09-26 실측 — bigcase 판례 본문 2초, lbox 판례 본문 3초면 백그라운드 탭에서도 본문·사이드바까지 적재됐다). 추출 결과가 0건·빈값이면(렌더 미완) `wait` 3초 → 추출 묶음만 다시 보낸다(최대 3회 — lbox 작업(Task)의 결과 패널은 검색이 끝나야 채워지므로 최대 5회. 백그라운드 탭에서 작업 주소를 바로 열면 15초 넘게 걸린 실측이 있다). timeout이 나면 그 페이지만 이동과 추출을 따로 보낸다.
-6. **`await`는 최상위에서**: JS 안에서 기다려야 하면 async IIFE로 감싸지 말고 최상위 `await`를 쓴다 — async IIFE는 결과 대신 `{}`가 돌아온다(실측). 긴 대기는 JS 반복문이 아니라 `computer` `wait`로 한다.
+5. **렌더 대기·재시도**: 이동·클릭 직후 곧바로 JS를 실행하면 렌더링과 충돌해 `Runtime.evaluate timed out`(45초)이 날 수 있어 batch 안에 `wait`를 먼저 둔다(2026-09-26 실측 — bigcase 판례 본문 2초, lbox 판례 본문 3초면 백그라운드 탭에서도 본문·사이드바까지 적재됐다). 추출 결과가 0건·빈값이면(렌더 미완) `wait` 3초 → 추출 묶음만 다시 보낸다(최대 3회. lbox 작업(Task)의 결과 패널은 검색이 끝나야 채워지므로 제출 직후에는 `wait` 3초씩 최대 5회. **작업 주소로 다시 들어갈 때**(새로고침·재진입, 본문 visit 뒤 결과로 돌아갈 때)는 [`navigate` → `wait` 2초 → `computer` `zoom`(작은 영역, `scale` 0.3) 또는 `screenshot` 1회 → `wait` 3초 → 확인]으로 한다 — 백그라운드 탭(`document.visibilityState` 'hidden')에서는 화면을 한 번 그려야 작업 적재가 시작된다(2026-09-27 실측: 그리지 않으면 20초 넘게 스피너, `zoom` 한 번 뒤 약 5초에 timeline). 그래도 비면 5초씩 최대 5회 더 기다린다. timeline이 떴는데 패널이 닫혀 있으면 "○○ 검색 결과" 카드를 누른다 — 1-1 5.). `Runtime.evaluate timed out`이 나면 그 페이지만 이동과 추출을 따로 보낸다. JS 실행이 약 40초를 넘으면 `{"code":-32603,"message":"Internal error"}`로 강제 종료된다(`references/troubleshooting.md`).
+6. **`await`는 최상위에서**: JS 안에서 기다려야 하면 async IIFE로 감싸지 말고 최상위 `await`를 쓴다 — async IIFE는 결과 대신 `{}`가 돌아온다(실측). 긴 대기는 JS 반복문이 아니라 `computer` `wait`로 한다(JS 실행이 약 40초를 넘으면 -32603 Internal error로 강제 종료된다).
 
 아래 JS는 모두 이 두 줄로 시작한다.
 
@@ -113,12 +113,28 @@ const OUT = s => { if (!window.__origBody) window.__origBody = document.body; co
 - 반환값은 `OUT n자`뿐이고 카드 JSON은 이어지는 `get_page_text`로 받는다(0장 — 세 호출을 batch 하나로).
 - `window.__lboxCommentary`는 페이지를 넘길 때마다 새로 쓰이므로, 페이지 간 중복은 각 페이지가 반환한 `items`를 대화 안에서 같은 키(docId·bookId·tocId·nodeId·page)로 한 번 더 거른다.
 
+**셀렉터가 안 맞을 때**: `a[data-track-props]`가 0건이거나 자가진단에 걸리면 (ⓐ 주석·실무서 탭 활성, ⓑ 패널 열림)을 먼저 본다. UI가 바뀌었으면 아래 JS 프로브로 카드 앵커의 속성명과 조상 class를 확인해 셀렉터를 조정한다. `read_page`는 역할·텍스트·href만 보여 주고 class·data-* 속성은 보여 주지 않으므로 프로브는 JS로 한다. 결과에는 속성명·클래스명만 담고 href 값·검색어는 넣지 않는다(`[BLOCKED]` 회피).
+
+```javascript
+// 앵커 → 조상 5단계의 tag.class 전부 [data-*·href 속성명] — class를 자르지 않는다(카드를 가리는 class가 뒤쪽에 올 수 있다)
+// 사이드바 작업 목록 링크도 a[data-track-props]라서 첫 앵커를 그냥 잡으면 안 된다(2026-09-27 실측) — documentType으로 거른다
+(() => {
+  const isScholar = a => { try { return JSON.parse(a.getAttribute('data-track-props')).documentType === 'scholar'; } catch { return false; } };
+  const a = [...document.querySelectorAll('a[data-track-props]')].find(isScholar) || document.querySelector('a[href^="/book/"][href*="?"]');   // 대체 경로 — 좌측 내비 /book/list 제외
+  if (!a) return 'no-anchor';
+  const out = []; let e = a;
+  for (let i = 0; i < 5 && e; i++, e = e.parentElement)
+    out.push(e.tagName + '.' + String(e.className).trim().split(/\s+/).join('.') + ' [' + e.getAttributeNames().filter(n => n.startsWith('data-') || n === 'href').join(',') + ']');
+  return JSON.stringify(out);
+})()
+```
+
 ### 1-4. 페이지 순회 · 필터
 
 - 결과는 **10건/페이지**, 결과 리스트 하단 페이지네이션은 판례 탭과 같은 `« ‹ [번호 5개] › »`다('…' 없음). ‹·›는 이전·다음 5페이지 묶음, «·»는 첫·마지막 페이지다(aria-label 첫 페이지로 이동·이전으로 이동·다음으로 이동·마지막 페이지로 이동, 현재 페이지는 `button[aria-current=page]`, 2026-09-27 실측). **»는 누르지 않는다** — 마지막 페이지로 건너뛰어 중간 페이지가 빠진다.
 - 다음 페이지: 아래 JS로 번호 버튼을 누른다 — 스크롤·스크린샷이 필요 없다. 현재 묶음에 N이 없으면 JS가 ›(다음으로 이동)를 눌러 묶음을 넘기고 `{advanced:true}`를 돌려준다. ›는 다음 묶음의 첫 페이지로 바로 이동한다(2026-09-27 실측 '소멸시효' 500건: 2페이지에서 N=6 → 6페이지 rank 51~60). 같은 batch에서 `wait` 2초 뒤 같은 JS를 다시 보내 N을 누른다. 묶음을 여럿 건너야 하면 `clicked:true`가 나올 때까지 [JS → `wait` 2초]를 되풀이한다(실측: 12페이지 → 50페이지, advanced 7회 뒤 clicked, rank 491~500).
 - `{lastBlock:true}`면 N이 마지막 페이지를 넘은 것이므로 순회를 끝낸다(마지막 묶음에서는 ›가 disabled다. 실측: '채권양도' 197건 — 20페이지 rank 191~197의 7건, N=21 → lastBlock. 500건 — N=51 → lastBlock). `no-pagination`이면 결과가 한 페이지뿐이거나(실측 2건: 페이지네이션 자체가 없다) 패널이 닫혔거나 탭이 바뀐 것이다(카드 수로 가린다).
-- 판례 탭 JS(`lbox-case-search` extraction.md 1-3)와 DOM이 같아 그대로 쓰되, 모달(role=dialog) 분기는 뺐다 — 주석·실무서 탭에는 페이지네이션이 든 모달이 없고 '법령별 도서목록' 모달은 role=dialog가 아니다(실측).
+- 판례 탭 JS(`lbox-case-search` extraction.md 1-3)와 DOM이 같아 그대로 쓰되, 모달(role=dialog) 분기는 뺐다 — 주석·실무서 탭에는 페이지네이션이 든 모달이 없다. '법령별 도서목록' 모달도 role=dialog이지만 페이지네이션이 없으니(2026-09-27 실측), 열려 있으면 `Escape`로 닫고 순회한다.
 
 ```javascript
 // N = 갈 페이지 번호(문자열) — 현재 페이지보다 큰 값만(뒤로 가기는 지원하지 않는다). 같은 batch에서 wait 2초 → 카드 추출 → get_page_text → 복구를 잇는다.
@@ -143,7 +159,7 @@ const OUT = s => { if (!window.__origBody) window.__origBody = document.body; co
 
 - 추출 뒤 복구하면 페이지 넘기기가 그대로 된다(실측: 11페이지 카드 추출 → `get_page_text` → 복구 → 12페이지 rank 111~120).
 
-- 법령·문서유형으로 좁히려면 주석·실무서 탭의 필터 칩(있으면)을 `screenshot`으로 확인해 `computer`로 조작하거나, 결과의 `bookMeta`·`breadcrumb`으로 선별한다(`references/filter-map.md`).
+- 법령·문서유형으로 좁히려면 주석·실무서 탭의 유형 칩과 '법령별 도서목록' 모달을 `screenshot`으로 확인해 `computer`로 조작하거나, 결과의 `bookMeta`·`breadcrumb`으로 선별한다(`references/filter-map.md`).
 
 ## 2. 본문 섹션 추출 (`/book/{bookId}` 뷰어)
 
@@ -159,7 +175,7 @@ https://lbox.kr/book/{bookId}?tocId={tocId}&nodeId={nodeId}&volumeHistoryId={vol
 
 핵심 메커니즘은 개편 전과 같다: URL의 `nodeId`에 해당하는 `[data-node-id]` 요소가 섹션 시작 **헤더**(`data-viewer-type="header"`)이고, 다음 `[data-viewer-type="header"]` 전까지의 형제 paragraph가 그 섹션 본문이다.
 
-> **2벌 렌더 주의**: 본문 페이지도 전체 DOM을 2벌로 그린다(같은 `nodeId` 헤더가 2개). 다만 **두 copy는 서로 다른 parent**에 있어, `headers[0]`의 형제만 걷으면 한 copy만 깨끗하게 모인다(실측: 중복 0, 제목 1회). 그래도 안전하게 형제 walk 중 **이미 본 `data-node-id`는 건너뛴다**.
+> **중복 렌더 대비**: 과거(2026-07) 본문 DOM이 2벌로 그려지는 것이 관찰됐다. 2026-09-26/27 실측(book 38·53·74·78·115)은 1벌이다. 다시 2벌이 되어도 `headers[0]`의 형제만 걷고 이미 본 `data-node-id`는 건너뛰므로 결과는 같다(보험).
 >
 > **섹션이 클 수 있음**: `nodeId`가 "Ⅳ. 인신사고로 인한 손해액의 산정" 같은 **상위 장**을 가리키면 그 장 전체(수만 자)가 한 섹션이다. 전문을 다 받으면 컨텍스트를 낭비하므로 `window.__lboxSection`에 저장하고 **질의 키워드 인근만 발췌**해 내놓는다.
 
@@ -170,8 +186,12 @@ https://lbox.kr/book/{bookId}?tocId={tocId}&nodeId={nodeId}&volumeHistoryId={vol
   if (window.__origBody) { document.body = window.__origBody; window.__origBody = null; }   // 복구(0장)
   const OUT = s => { if (!window.__origBody) window.__origBody = document.body; const b = document.createElement('body'), p = document.createElement('pre'); p.textContent = s; b.appendChild(p); document.body = b; return 'OUT ' + s.length + '자'; };
   const targetId = new URL(location.href).searchParams.get('nodeId');   // 읽기만; 반환하지 않음
-  const header = document.querySelector('[data-node-id="' + (targetId || '') + '"]'); // 첫 copy
-  if (!header) return JSON.stringify({ error: 'header not found' });
+  const useFirst = false;   // 절·장 제목 노드(아래 header not found 판별)면 true로 바꿔 viewer의 첫 header부터 읽는다
+  const hs = document.querySelectorAll('[data-viewer-type="header"]');
+  const header = document.querySelector('[data-node-id="' + (targetId || '') + '"]') || (useFirst ? hs[0] : null); // 첫 copy
+  if (!header) return JSON.stringify({ error: 'header not found', viewerHeaders: hs.length,   // 진단값 — 짧아서 직접 반환
+    nodeCount: document.querySelectorAll('[data-node-id]').length, pdfViewer: !!document.querySelector('.rpv-core__viewer'),
+    firstHeader: hs[0] ? (hs[0].innerText || '').replace(/\s+/g, ' ').trim().slice(0, 80) : '' });
   const sibs = Array.from(header.parentElement.children);
   const start = sibs.indexOf(header);
   const seen = new Set(), parts = [];
@@ -179,7 +199,7 @@ https://lbox.kr/book/{bookId}?tocId={tocId}&nodeId={nodeId}&volumeHistoryId={vol
     const el = sibs[i];
     if (i > start && el.getAttribute('data-viewer-type') === 'header') break;  // 다음 섹션 시작
     const id = el.getAttribute('data-node-id');
-    if (id) { if (seen.has(id)) continue; seen.add(id); }                        // 2벌 dedup 보험
+    if (id) { if (seen.has(id)) continue; seen.add(id); }                        // 중복 렌더 대비(보험)
     const t = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
     if (t) parts.push(t);
   }
@@ -198,7 +218,7 @@ https://lbox.kr/book/{bookId}?tocId={tocId}&nodeId={nodeId}&volumeHistoryId={vol
 ```
 
 - **추가 발췌**: 더 필요하면 0장의 두 줄 뒤에 `OUT(window.__lboxSection.slice(START, END))`를 실행해 범위를 옮겨 받는다(한 번에 12,000자 안팎까지).
-- **`header not found`**: 로드 미완·UI 변경. 한 번 retry(짧은 텀) 후에도 실패하면 그 카드 건너뜀. 단 `[data-node-id]`가 0개이고 `.rpv-core__viewer`가 있으면 PDF형(구조 차이)이다 — retry하지 말고 2-2로 간다(적재 초기에는 canvas가 없을 수 있어 canvas 유무로 가리지 않는다). `nodeId`를 JS 코드에 임베드해 반환 JSON에 노출하면 `[BLOCKED]` 위험이 있으니, URL에서 읽어 쓰되 결과로 반환하지 않는다.
+- **`header not found`**: 함께 나온 진단값으로 원인을 가른다. ⓐ `nodeCount` 0 — `pdfViewer`가 true면 PDF형(구조 차이)이다. retry하지 말고 2-2로 간다(적재 초기에는 canvas가 없을 수 있어 canvas 유무로 가리지 않는다). false면 로드 미완이다 — `wait` 3초 뒤 1회 retry. ⓑ `viewerHeaders` ≥ 1인데 대상만 없고 카드 스니펫이 섹션 제목 그대로(예: '제3절 소송구조 …')면 절·장 제목 노드다. viewer는 이 노드를 그리지 않고 첫 하위 섹션(`firstHeader`)을 보여 주므로 retry해도 매번 같다(2026-09-27 실측 book 45: '제3절 소송구조' → '[총설]'). retry 없이 같은 breadcrumb의 첫 하위 노드 카드로 가거나, `useFirst`를 true로 바꿔 `firstHeader`부터 읽는다. ⓒ 그 밖(UI 변경 가능) — 한 번 retry 후에도 실패하면 그 카드 건너뜀. `nodeId`를 JS 코드에 임베드해 반환 JSON에 노출하면 `[BLOCKED]` 위험이 있으니, URL에서 읽어 쓰되 결과로 반환하지 않는다.
 - **본문 빈약(조문 노드)**: SKILL 5.1 절차 — 같은 도서·breadcrumb 부모의 하위 노드 카드를 추가 visit.
 
 ### 2-2. PDF형 실무서 본문
