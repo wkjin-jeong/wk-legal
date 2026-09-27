@@ -72,19 +72,99 @@ def offline() -> None:
     check("HTML 숨은 입력란의 키 마스킹", "secretkey" not in L._mask_oc_in_body(html, url))
 
     base = {"공포일자": "20240920", "공포번호": "20432", "명칭": "민법", "시행일자": "20250131", "법령구분": "법률"}
-    _, phrase = L._precedent_phrase(base, {**base, "시행일자": "20260101"}, "law")
+    _, phrase, _ = L._precedent_phrase(base, {**base, "시행일자": "20260101"}, "law")
     check("판례식: 단계적 시행분", phrase == "구 민법(2024. 9. 20. 법률 제20432호로 개정되어 2026. 1. 1. 시행되기 전의 것)",
           phrase)
-    _, phrase = L._precedent_phrase(base, {**base, "공포일자": "20250401", "공포번호": "20500"}, "law")
+    _, phrase, _ = L._precedent_phrase(base, {**base, "공포일자": "20250401", "공포번호": "20500"}, "law")
     check("판례식: 일반 개정", phrase == "구 민법(2025. 4. 1. 법률 제20500호로 개정되기 전의 것)", phrase)
     o = {"공포일자": "20150622", "공포번호": "2465", "명칭": "가평군 옥외광고물 등 관리 조례",
          "시행일자": "20150622", "법령구분": "조례", "지자체": "경기도 가평군"}
-    _, phrase = L._precedent_phrase({**o, "공포번호": "2400"}, o, "ordin")
+    _, phrase, _ = L._precedent_phrase({**o, "공포번호": "2400"}, o, "ordin")
     check("판례식: 자치법규 표기", "경기도가평군조례 제2465호" in phrase, phrase)
     a = {"공포일자": "20221123", "공포번호": "2022-44", "명칭": "전자금융감독규정", "시행일자": "20230101",
          "법령구분": "고시", "소관부처": "금융위원회"}
-    _, phrase = L._precedent_phrase({**a, "공포번호": "2018-36"}, a, "admrul")
+    _, phrase, _ = L._precedent_phrase({**a, "공포번호": "2018-36"}, a, "admrul", [])
     check("판례식: 행정규칙 표기", "금융위원회고시 제2022-44호" in phrase, phrase)
+
+    # 공포(발령)번호 정규화 — 앞자리 0 제거, 행정규칙 자리표시 9999 생략(법령 9999는 실제 번호)
+    lw = lambda d, no, eff, name="행정소송법": {"공포일자": d, "공포번호": no, "명칭": name, "시행일자": eff,
+                                             "법령구분": "법률"}
+    _, phrase, _ = L._precedent_phrase(lw("19940727", "04770", "19980301"), lw("20020126", "06627", "20020701"), "law")
+    check("번호 정규화: 06627 → 제6627호", phrase == "구 행정소송법(2002. 1. 26. 법률 제6627호로 개정되기 전의 것)", phrase)
+    sa = {"공포일자": "20240913", "공포번호": "9999", "명칭": "전자금융감독규정시행세칙", "시행일자": "20240915",
+          "법령구분": "세칙", "소관부처": "금융감독원"}
+    buf = io.StringIO()
+    with contextlib.redirect_stderr(buf):
+        head, phrase, _ = L._precedent_phrase({**sa, "공포일자": "20221229", "시행일자": "20230101"}, sa, "admrul", [])
+    check("번호 정규화: 행정규칙 9999 → 종류·번호 생략",
+          phrase == "구 전자금융감독규정시행세칙(2024. 9. 13. 개정되기 전의 것)" and "9999" not in head
+          and "자리표시" in buf.getvalue(), phrase + head)
+    _, phrase, _ = L._precedent_phrase(lw("20091231", "9800", "20100101", "X"), lw("20100125", "9999", "20100126", "X"),
+                                       "law")
+    check("번호 정규화: 법령 9999는 유지", "법률 제9999호로 개정되기 전의 것" in phrase, phrase)
+    check("번호 정규화: 그 밖의 값", [L._norm_prom_no(v, t) for v, t in (("00968", "law"), ("2022-44", "admrul"),
+          ("none", "ordin"), ("", "law"), ("9999", "ordin"))] == ["968", "2022-44", "", "", "9999"])
+    txt = L._body_text("<법령><기본정보><법령명_한글>행정소송법</법령명_한글><공포일자>20090210</공포일자>"
+                       "<공포번호>09359</공포번호></기본정보></법령>") or ""
+    txt2 = L._body_text("<AdmRulService><행정규칙기본정보><행정규칙명>세칙</행정규칙명><발령일자>20221229</발령일자>"
+                        "<발령번호>9999</발령번호></행정규칙기본정보></AdmRulService>") or ""
+    check("--text 머리행 번호 정규화", txt == "행정소송법 · 공포 20090210 · 제9359호" and txt2 == "세칙 · 발령 20221229",
+          txt + " / " + txt2)
+
+    # 단계적 시행·공포 순서 역전 판별(A 같은 개정 / B 선택본 전 일부 시행 / C 먼저 공포·뒤에 시행 / 그 밖 일반형)
+    hl = lambda d, no, eff: lw(d, no, eff, "주택임대차보호법")
+    rows = [hl("20230418", "19356", "20230418"), hl("20230711", "19520", "20230711"), hl("20230719", "19356", "20230719")]
+    rows[2]["공포일자"] = "20230418"
+    head, phrase, kind = L._precedent_phrase(rows[1], rows[2], "law", rows)
+    check("판례식 B: 선택본 전에 일부 시행된 개정의 나머지",
+          kind == "B" and phrase == "구 주택임대차보호법(2023. 4. 18. 법률 제19356호로 개정되어 2023. 7. 19. 시행되기 전의 것)",
+          phrase)
+    _, phrase, kind = L._precedent_phrase(lw("20250814", "21016", "20260101", "도로교통법"),
+                                          lw("20250401", "20864", "20260402", "도로교통법"), "law", [])
+    check("판례식 C: 먼저 공포·뒤에 시행",
+          kind == "C" and phrase == "구 도로교통법(2025. 4. 1. 법률 제20864호로 개정되어 2026. 4. 2. 시행되기 전의 것)", phrase)
+    _, phrase, kind = L._precedent_phrase(lw("20011229", "6541", "20020101"), lw("20020126", "6627", "20020701"),
+                                          "law", [])
+    check("판례식 D: 뒤에 공포된 개정은 일반형", kind == "" and phrase.endswith("법률 제6627호로 개정되기 전의 것)"), phrase)
+    _, _, kind = L._precedent_phrase(lw("20200101", "17000", "20200101"), lw("20200101", "16999", "20210101"), "law", [])
+    check("판례식 C: 같은 날 공포·번호가 작으면", kind == "C")
+    _, _, k1 = L._precedent_phrase({**a, "공포번호": "2022-45"}, {**a, "시행일자": "20230201"}, "admrul", [])
+    ph = {**o, "공포일자": "00000000", "공포번호": "none", "시행일자": "99991231"}
+    _, _, k2 = L._precedent_phrase(o, ph, "ordin", [o, ph])
+    check("판례식: 숫자 아닌 번호·자리표시 행은 C로 보지 않음", k1 == "" and k2 == "", f"{k1!r} {k2!r}")
+
+    # 공포본(target=law) → 시행일 기준 본문(eflaw) 요청 파라미터
+    import argparse
+    lb = "<법령><기본정보><법령ID>001700</법령ID><시행일자>20250712</시행일자></기본정보>{}</법령>"
+    ns = lambda **k: argparse.Namespace(**{"mst": None, "id": None, "lm": None, **k})
+    for label, body in (("본문", lb.format("<조문><조문단위><조문내용>제1조</조문내용></조문단위></조문>")),
+                        ("빈 JO 응답", lb.format(""))):
+        check(f"law → eflaw 파라미터({label})",
+              L._law_effective_params(body, ns(mst="252393")) == {"target": "eflaw", "MST": "252393", "efYd": "20250712"}
+              and L._law_effective_params(body, ns(lm="민사소송법")) == {"target": "eflaw", "ID": "001700"}
+              and L._law_effective_params(body, ns(id="001700")) == {"target": "eflaw", "ID": "001700"})
+
+    # --byl — 본문 <별표단위>에서 별표·서식 하나
+    bylx = ("<법령><기본정보/><별표>"
+            "<별표단위 별표키='000302E'><별표번호>0003</별표번호><별표가지번호>02</별표가지번호><별표구분>별표</별표구분>"
+            "<별표제목>행정처분의 기준(제33조제2항 관련)</별표제목><별표시행일자>20231212</별표시행일자>"
+            "<별표서식파일링크>/LSW/flDownload.do?flSeq=1</별표서식파일링크>"
+            "<별표내용><![CDATA[■ [별표 3의2]    \n\n        \n\n  1. 일반기준   \n\n  가. 첫 줄\n\n  이어짐]]></별표내용></별표단위>"
+            "<별표단위><별표번호>0003</별표번호><별표가지번호>00</별표가지번호><별표구분>서식</별표구분>"
+            "<별표제목>신고서</별표제목><별표내용>[별지 제3호서식]</별표내용></별표단위></별표></법령>")
+    out = L._byl_extract(bylx, "별표 3의2", "별표")
+    check("--byl 별표 가지번호·머리 한 줄·내용 정리",
+          out == ("[별표 3의2] 행정처분의 기준(제33조제2항 관련) · 별표시행일자 20231212 · "
+                  "https://www.law.go.kr/LSW/flDownload.do?flSeq=1\n\n■ [별표 3의2]\n\n  1. 일반기준\n  가. 첫 줄\n  이어짐"),
+          out)
+    check("--byl 서식", L._byl_extract(bylx, "3", "서식").startswith("[별지 제3호서식] 신고서"))
+    buf = io.StringIO()
+    with contextlib.redirect_stderr(buf):
+        code = exits(L._byl_extract, bylx, "3", "별표")
+    check("--byl 없는 번호 → 목록과 exit 2", code == 2 and "[별표 3의2] 행정처분의 기준" in buf.getvalue(), buf.getvalue())
+    with contextlib.redirect_stderr(io.StringIO()):
+        code = exits(L._parse_byl, "abc")
+    check("--byl 번호 해석", L._parse_byl("23") == (23, 0) and L._parse_byl("[별표 4의2]") == (4, 2) and code == 2)
 
     nf = '<?xml version="1.0" encoding="utf-8"?><Law>일치하는 법령이 없습니다.  법령명을 확인하여 주십시오.</Law>'
     check("일치 없음 XML 감지", bool(L._find_not_found(nf)))
@@ -135,6 +215,13 @@ def offline() -> None:
     tab = (L._search_table(byl, "ordinbyl") or "").splitlines()
     check("search 표: 강조 태그·flNm 제거", tab[2:3] == ["(별지) 옥외 | /LSW/flDownload.do?gubun=ELIS&flSeq=1"], tab)
     check("search 표: 해석 불가 → None(원문 출력)", L._search_table("<html>오류", "law") is None)
+    nos = ('<LawSearch><totalCnt>2</totalCnt><page>1</page><law><법령명한글>행정소송법</법령명한글><공포번호>06627</공포번호></law>'
+           '<law><법령명한글>x</법령명한글><공포번호>2022-44</공포번호></law></LawSearch>')
+    tab = (L._search_table(nos, "law") or "").splitlines()
+    check("search 표: 공포번호 앞자리 0 제거·비숫자 유지(LAW-01 후속)", tab[2:] == ["행정소송법 | 6627", "x | 2022-44"], tab)
+    adm = '<AdmRulSearch><totalCnt>1</totalCnt><admrul><행정규칙명>세칙</행정규칙명><발령번호>9999</발령번호></admrul></AdmRulSearch>'
+    tab = (L._search_table(adm, "admrul") or "").splitlines()
+    check("search 표: 행정규칙 자리표시 번호 9999 → 없음(원값)", tab[2:] == ["세칙 | 없음(원값 9999)"], tab)
     law = ('<법령><기본정보><법령ID>010199</법령ID><공포일자>20251216</공포일자><공포번호>21205</공포번호>'
            '<법종구분>법률</법종구분><법령명_한글>전자금융거래법</법령명_한글><시행일자>20251216</시행일자></기본정보><조문>'
            '<조문단위><조문여부>전문</조문여부><조문내용>   제2장 전자금융거래 당사자의 권리와 의무</조문내용></조문단위>'
@@ -257,6 +344,10 @@ def live() -> None:
         r = run(["search", "--target", "law", "--query", "민법", "--display", "5"], env=env)
         check("search 표 출력(원시 XML 아님)", r.returncode == 0 and r.stdout.startswith("# law '민법'")
               and "법령ID" in r.stdout and "</" not in r.stdout, r.stdout[:200])
+        r = run(["search", "--target", "eflaw", "--query", "행정소송법", "--nw", "1", "--display", "5", "--sort", "dasc",
+                 "--page", "2"], env=env)
+        check("LAW-01 search 표 공포번호 정규화(06627 → 6627)", r.returncode == 0 and "| 6627 |" in r.stdout
+              and "| 06627 |" not in r.stdout, r.stdout[:400])
         r = run(["get", "--target", "eflaw", "--lm", "민법", "--jo", "390", "--text"], env=env)
         check("get --text 법령", r.returncode == 0 and "제390조(채무불이행과 손해배상)" in r.stdout
               and "법령ID 001706" in r.stdout and "</" not in r.stdout and len(r.stdout) < 600, r.stdout[:200])
@@ -305,6 +396,51 @@ def live() -> None:
             check("M2 키 노출 0 (stdout·저장·dry-run)",
                   r.returncode == 0 and leaks(r.stdout, r.stderr, saved, d.stdout, v.stdout) == 0
                   and "target=admrul" in v.stdout)
+        # 공포(발령)번호 정규화 — 판례식·선택본 머리행·--text 머리행
+        r = run(["get-asof", "--lid", "001218", "--date", "20000101", "--jo", "20", "--text"], env=env)
+        check("번호 정규화: 행정소송법 판례식·머리행", r.returncode == 0 and "법률 제6627호로 개정되기 전의 것" in r.stderr
+              and "제4770호" in r.stderr and "· 제4770호 ·" in r.stdout and "제0" not in r.stderr + r.stdout,
+              r.stderr[-300:] + r.stdout[:200])
+        r = run(["get-asof", "--lid", "006358", "--date", "20230301", "--jo", "1"], env=env)
+        check("번호 정규화: 부령(보건복지부령 제968호)", "보건복지부령 제968호" in r.stderr and "제00968호" not in r.stderr,
+              r.stderr[-300:])
+        r = run(["get-asof", "--lid", "001692", "--date", "20050101", "--jo", "1"], env=env)
+        check("번호 정규화: 형법 법률 제7623호", "법률 제7623호로 개정되기 전의 것" in r.stderr, r.stderr[-300:])
+        r = run(["get-asof", "--target", "admrul", "--query", "전자금융감독규정시행세칙", "--date", "20230101",
+                 "--jo", "1", "--text"], env=env)
+        check("번호 정규화: 금감원 세칙 자리표시 9999 생략", r.returncode == 0 and "제9999호" not in r.stderr + r.stdout
+              and "(2024. 9. 13. 개정되기 전의 것)" in r.stderr, r.stderr[-300:])
+        # 단계적 시행·공포 순서 역전 판례식
+        for lid, day in (("001248", "20230715"), ("001702", "20260410"), ("007079", "20260718"), ("001638", "20260314")):
+            r = run(["get-asof", "--lid", lid, "--date", day, "--jo", "1"], env=env)
+            tail = r.stderr.split("판례식:")[-1].split("\n")[0]
+            check(f"판례식 B·C 실측({lid} {day})", "개정되어" in tail and "시행되기 전의 것" in tail, tail)
+        r = run(["get-asof", "--lid", "001692", "--date", "20240410", "--jo", "1"], env=env)
+        check("판례식 일반형 유지(형법 20240410)", "(2025. 3. 18. 법률 제20795호로 개정되기 전의 것)" in r.stderr,
+              r.stderr[-300:])
+        # get --target law → 언제나 시행일 기준 본문(뒤에 공포·먼저 시행된 개정 반영)
+        r = run(["get", "--target", "law", "--lm", "민사소송법", "--jo", "402의2", "--text"], env=env)
+        check("law → eflaw: 민사소송법 제402조의2", r.returncode == 0 and "항소이유서의 제출" in r.stdout, r.stderr[-300:])
+        r = run(["get", "--target", "law", "--lm", "민사소송법", "--jo", "421", "--text"], env=env)
+        check("law → eflaw: 제421조 개정 문언", r.returncode == 0 and "제402조의3에 따른 결정" in r.stdout, r.stdout[-300:])
+        r = run(["get", "--target", "law", "--lm", "민사소송법", "--jo", "421", "--text", "--promulgated"], env=env)
+        check("law --promulgated 공포본 유지", r.returncode == 0 and "제402조의 규정에 따른 명령" in r.stdout, r.stdout[-300:])
+        r = run(["get", "--target", "law", "--mst", "258669", "--jo", "163", "--text"], env=env)
+        check("law --mst → 그 버전 시행 기준(뒤에 시행된 개정 미혼입)", r.returncode == 0 and "제163조" in r.stdout
+              and "개인정보 기재부분" not in r.stdout, r.stdout[-300:])
+        # --byl — 기준일 별표
+        r = run(["get-asof", "--lid", "004273", "--date", "20250801", "--byl", "4", "--text"], env=env)
+        check("--byl 기준일 별표(외국환거래법 시행령 20250801)", r.returncode == 0 and r.stdout.startswith(
+              "[별표 4] 과태료 부과기준(제41조 관련) · 별표시행일자 20231212") and len(r.stdout) > 3000, r.stdout[:200])
+        r = run(["get-asof", "--lid", "004273", "--date", "20260926", "--byl", "4"], env=env)
+        check("--byl 현행 별표", r.returncode == 0 and "<개정 2025. 12. 30.>" in r.stdout, r.stdout[:300])
+        r = run(["get-asof", "--lid", "007634", "--date", "20260301", "--byl", "23"], env=env)
+        check("--byl 식품위생법 시행규칙 [별표 23]", r.returncode == 0 and "행정처분 기준(제89조 관련)" in r.stdout,
+              r.stdout[:200])
+        r = run(["get-asof", "--lid", "004273", "--date", "20250801", "--byl", "99"], env=env)
+        check("--byl 없는 번호 → exit 2·목록", r.returncode == 2 and "[별표 3의2]" in r.stderr, r.stderr[-300:])
+        r = run(["get-asof", "--target", "admrul", "--query", "전자금융감독규정", "--date", "20241225", "--byl", "1"], env=env)
+        check("--byl 행정규칙 별표", r.returncode == 0 and r.stdout.startswith("[별표 1] 정보기술부문"), r.stdout[:200])
         cowork(key, env)
     finally:
         shutil.rmtree(cache, ignore_errors=True)

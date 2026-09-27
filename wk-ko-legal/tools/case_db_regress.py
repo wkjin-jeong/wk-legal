@@ -3,7 +3,7 @@
 
     python3 tools/case_db_regress.py
 
-기대값은 2026-09-25 판례DB 기준이다(보유 판례가 바뀌면 사례를 다시 고른다). 위키에는 아무것도 쓰지 않는다 —
+기대값은 2026-09-25 판례DB 기준이다(재정·심판·병합 사례는 2026-09-27 — 보유 판례가 바뀌면 사례를 다시 고른다). 위키에는 아무것도 쓰지 않는다 —
 검사 전후로 색인 파일과 정규화 도구 폴더의 수정 시각을 비교한다.
 """
 from __future__ import annotations
@@ -58,7 +58,25 @@ def main() -> None:
     check("auto-extracted 표시·원본 경로 출력", "auto-extracted(lbox·bigcase 개별 취득분" in r.stdout and "원본: " in r.stdout
           and "URL: https://" in r.stdout, r.stdout[:300])
     r = run("read", "대법원 2021마6542", "--max-chars", "100")
-    check("전원합의체 결정 표기", "2021마6542 전원합의체 결정" in r.stdout, r.stdout[:200])
+    check("전원합의체 결정 표기", "2025. 7. 24.자 2021마6542 전원합의체 결정" in r.stdout, r.stdout[:200])
+    r = run("search", "--decision-type", "재정")
+    check("재정 표기 '.자'", "대법원 1979. 12. 7.자 79초70 재정" in r.stdout, r.stdout[:200])
+    r = run("search", "--case-no", "2022느합3003")
+    check("가사 심판 표기 '.자'", "의정부지방법원 2024. 1. 3.자 2022느합3003 심판" in r.stdout, r.stdout[:200])
+    r = run("read", "대법원 2022다302497", "--max-chars", "100")
+    check("병합 사건번호(같은 부호는 일련번호만)·원문 표제 출력",
+          "대법원 2023. 4. 27. 선고 2022다302497, 302503 판결 |" in r.stdout
+          and "원문 표제: 대법원 2023. 4. 27. 선고 2022다302497, 302503 판결" in r.stdout, r.stdout[:300])
+    r = run("read", "대법원 2008다7772", "--max-chars", "50")
+    check("병합 사건번호(원문 표제 '7772,7789')", "선고 2008다7772, 7789 판결 |" in r.stdout, r.stdout[:200])
+    r = run("read", "대법원 1988다1516", "--max-chars", "50")
+    check("병합 사건번호(부호가 섞인 경우)", "선고 88다1516, 1523, 88다카10029, 10036 판결 |" in r.stdout, r.stdout[:200])
+    r = run("search", "--case-no", "2012전노2", "--court", "광주고등법원", "--limit", "5")
+    check("병합 사건번호(부수 사건 전체 번호)", "선고 2012노12, 2012전노2 판결 |" in r.stdout, r.stdout[:200])
+    r = run("read", "헌법재판소 2015헌마1177", "--max-chars", "50")
+    check("헌법재판소 병합 결정은 주 번호만", "헌법재판소 2016. 4. 28. 선고 2015헌마1177 결정 |" in r.stdout, r.stdout[:200])
+    r = run("read", "대법원 95다28625", "--max-chars", "50")
+    check("단일 사건번호는 그대로", "선고 95다28625 전원합의체 판결 |" in r.stdout, r.stdout[:200])
     r = run("read", "부산고등법원 1962다16")
     check("법원이 다르면 다른 판례로 바꾸지 않음", r.returncode == 2 and "대구" not in r.stdout, r.stdout[:200] + r.stderr[-200:])
     r = run("fulltext", "")

@@ -9,7 +9,8 @@
 
 - 위키 루트: --root > WK_LEGAL_WIKI_ROOT > ~/LLM-wiki > ~/mnt/LLM-wiki(Cowork VM). SQLite는 file: URI mode=ro + PRAGMA query_only로 연다.
   위키에 아무것도 쓰지 않는다(색인 재생성·반입 스크립트도 실행하지 않음).
-- 인용 표기는 결과의 citation을 그대로 쓴다(판례DB/_인용규약.md §4 — 공식 사건번호로 역변환). 정규형(1992다…)을 인용문에 쓰지 않는다.
+- 인용 표기는 결과의 citation을 그대로 쓴다(판례DB/_인용규약.md §4 — 공식 사건번호로 역변환, 병합 사건번호 포함 — 헌재는 주 번호만). 정규형(1992다…)을
+  인용문에 쓰지 않는다. (본소)·(반소)·(병합) 같은 표시는 citation에 없다 — 필요하면 read의 '원문 표제'를 따른다.
 - trigram FTS는 3자 미만 용어를 잡지 못한다 — 짧은 용어는 본문 LIKE로 보강한다(느림). 0건을 '보유분 없음'으로 단정하지 말 것.
 - 표준 라이브러리만 사용. Python 3.9 이상.
 """
@@ -92,20 +93,44 @@ def connect(root: str) -> sqlite3.Connection:
 
 COLS = ("c.case_id, c.court, c.case_no, c.instance, c.decision_type, c.en_banc, c.date, c.case_name, "
         "c.field, c.report, c.published, c.text_status, c.chars, c.file, c.source_raw, c.acquisition, "
-        "(SELECT COUNT(*) FROM case_refs r WHERE r.ref_case_id = c.case_id) AS cited")
+        "(SELECT COUNT(*) FROM case_refs r WHERE r.ref_case_id = c.case_id) AS cited, "
+        "(SELECT group_concat(n.case_no, '|') FROM case_numbers n WHERE n.case_id = c.case_id) AS nums")
+_NUM = re.compile(r"^(\d{4})(\D+)(\d+)$")   # 정규형 사건번호: 연도·사건부호·일련번호
+
+
+def case_nums(row, official) -> str:
+    """주 사건번호 + 병합 사건번호(case_numbers = front-matter 사건번호·병합사건번호). 주 번호 다음에 같은 연도·부호
+    번호를 일련번호 오름차순으로, 이어서 다른 부호 번호를 둔다. 앞 번호와 연도·부호가 같으면 일련번호만 적는다
+    ('2022다302497, 302503', '2012노12, 2012전노2')."""
+    main = row["case_no"]
+    rest = [n for n in (row["nums"] or "").split("|") if n and n != main]
+    head = _NUM.match(main)
+
+    def key(n: str) -> tuple:
+        m = _NUM.match(n)
+        if not m:
+            return (2, n, 0)
+        return (0 if head and m.group(1, 2) == head.group(1, 2) else 1, m.group(1) + m.group(2), int(m.group(3)))
+
+    out, prev = [official(main)], head
+    for n in sorted(rest, key=key):
+        m = _NUM.match(n)
+        out.append(m.group(3) if m and prev and m.group(1, 2) == prev.group(1, 2) else official(n))
+        prev = m
+    return ", ".join(out)
 
 
 def citation(row, official) -> str:
     """판례DB/_인용규약.md §4 형식."""
     y, m, d = (row["date"] or "0000-00-00").split("-")
     date = f"{int(y)}. {int(m)}. {int(d)}." if d != "00" else f"{int(y)}."
-    num = official(row["case_no"])
     kind = row["decision_type"] or "판결"
     court = row["court"]
-    if court == "헌법재판소":
-        return f"{court} {date} 선고 {num} 결정"
+    if court == "헌법재판소":  # 헌재 병합사건번호는 front-matter에 오기가 있어(2015헌마1177: 2016헌마17 → 2015헌마17) 주 번호만
+        return f"{court} {date} 선고 {official(row['case_no'])} 결정"
+    num = case_nums(row, official)
     eb = "전원합의체 " if row["en_banc"] else ""
-    if kind in ("결정", "명령", "심판"):          # 가사 심판도 원문 표제가 '…자 …느단… 심판'
+    if kind in ("결정", "명령", "심판", "재정"):  # 가사 심판·재정도 원문 표제가 '…자 …느단… 심판'·'…자 79초70 재정'
         return f"{court} {date}자 {num} {eb}{kind}"
     return f"{court} {date} 선고 {num} {eb}{kind}"
 
@@ -250,12 +275,14 @@ def cmd_read(con, a, official) -> None:
     fm = re.match(r"\A---\n(.*?)\n---\n", text, flags=re.DOTALL)
     url = re.search(r'^source_url:\s*"?([^"\n]+)"?', fm.group(1), re.M) if fm else None
     text = text[fm.end():].strip() if fm else text.strip()
+    title = re.search(r"^# (.+)$", text, re.M)
     a.offset = max(0, a.offset)
     laws = [r[0] for r in con.execute("SELECT ref_text FROM law_refs WHERE case_id = ?", (row["case_id"],))]
     refs = [r[0] for r in con.execute("SELECT ref_case_id FROM case_refs WHERE case_id = ?", (row["case_id"],))]
     part = text[a.offset:a.offset + a.max_chars]
     nxt = a.offset + a.max_chars if a.offset + a.max_chars < len(text) else None
     print(line(row, official))
+    print(f"원문 표제: {title.group(1).strip() if title else '-'}")
     if row["text_status"] == "auto-extracted":
         print("참고: auto-extracted(lbox·bigcase 개별 취득분 — 그 사이트 원문과 같으므로 대조 없이 인용, 판례-인용-정책 3.)")
     print(f"참조조문: {', '.join(laws) or '-'}\n참조판례: {', '.join(refs) or '-'}")
