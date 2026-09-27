@@ -12,7 +12,8 @@
      (예: '../../shared/기본-문체-규칙.md', 'shared/판례-인용-정책.md') — 자기 shared/가 없는 플러그인은
      같은 저장소 다른 플러그인의 shared/에서 찾는다(함께 설치될 때 쓰는 파일이 남아 있는지)
   6. 드리프트 린트 — 개정 뒤 일부 파일에 남기 쉬운 낡은 표현(DRIFT_PATTERNS). 대상: SKILL.md,
-     references/*.md, shared/*.md, README.md (CHANGELOG·tools·evals·스크립트 제외)
+     references/*.md, shared/*.md, README.md (CHANGELOG·tools·스크립트 제외). 개별 스킬 전용 SKILL_TREE_PATTERNS와
+     연동 정책 밖 NON_POLICY_PATTERNS는 evals/(json·md)에도 건다
   7. 절 포인터 실존 — '`references/…md` 2장'·'`shared/…md` 1.1-5'·'06 3장'이 가리키는
      번호의 제목(## 2. / ### 1.1 / ### 1-3.)이 대상 문서에 있는지
   8. 스킬 수 표기 — plugin.json·마켓플레이스의 자기 항목·플러그인 README·저장소 README에서 자기 이름이 든 줄의
@@ -51,7 +52,6 @@ SHARED_REF = re.compile(r"(?:\.\./\.\./)?shared/([\w가-힣.\-]+\.md)")
 # 드리프트 린트: (정규식, 사유, 예외 — 같은 줄에 이 정규식이 있으면 허용(금지 규정을 설명하는 줄 등))
 DRIFT_PATTERNS: list[tuple[str, str, str | None]] = [
     (r"lbox(?:에서|로) (?:재)?확인", "판례 확인을 lbox 단독 지정 — 판례-인용-정책 1.1(판례DB 우선)", r"류 기존 문구"),
-    (r"라 할 것입니다", "'–라 할 것입니다' 권장 — 기본-문체-규칙 1.(위키 공통 §10 지양)", r"쓰지 않는다|지양|금지|린트"),
     (r"\d\. 자 ", "결정 표기 '. 자' — '.자'로(판례-인용-정책 5.)", None),
     (r"mcp__Claude_in_Chrome__", "낡은 Chrome 도구명 — 호스트 중립 표기로", None),
     (r"(?<![\w./])python (?:scripts/|\S*law_api\.py)", "'python' 실행 — python3로(Cowork VM에 python 없음)", None),
@@ -94,7 +94,6 @@ DRIFT_PATTERNS: list[tuple[str, str, str | None]] = [
      r"쓰지 않는다|지양|금지|대신|아니라|허용 변형|린트"),
     (r"(?:이라|라) 합니다\.\)", "별칭 정의 괄호 안 마침표 — (이하 '○○'이라 합니다)", None),
     (r"금 일억 원", "금액 한글 병기 — 아라비아 숫자+쉼표(기본-문체-규칙 8.)", r"하지 않는다|병기 없음"),
-    (r'"위 ○○○"', "대명사형 약칭 — 호칭 반복(기본-문체-규칙 8.)", None),
     (r"증거순번 [○\d]+번", "증거순번 표기 — '증거순번 N'(형사 08 3.)", None),
     (r"증거기록 (?:[○\d]+권 )?[○\d]+면", "증거기록 좌표 — 'N권 N쪽'(형사 08 3.)", None),
     (r"연·월·일 중 (?:\*\*)?하나만", "부분 날짜 자기모순 조항 — 연·월 '2026. 6.', 시기 불명 '2026. 6.경'(기본-문체-규칙 5.)", None),
@@ -107,8 +106,6 @@ DRIFT_PATTERNS: list[tuple[str, str, str | None]] = [
      "가공 사건번호를 실제 판례처럼 — ○ 자리표시 또는 판례DB 실존 번호(판례-인용-정책 5.)", None),
     (r'\(이하 "[^"]+"\)', "약칭 정의 — (이하 '○○법'이라 합니다)(ko-law-api 6.)", None),
     (r"별표 본문 HTML을 받을 수|별표 단건 조회 가능", "별표 상세링크(type=HTML)는 본문 없는 iframe 껍데기 — get-asof --byl", None),
-    (r"이 사건 청구에 이른 것입니다|이유 없으므로 기각되어야 합니다", "소장·답변서 구 결론 문형 — 위키 결어 정형·재판부 요청형", None),
-    (r"\((?:소)?[갑을] 제\d+호증(?:의 \d+(?:, \d+)?)? (?:각 )?[^'\)\d,각][^)]*\)", "증거 인용 구형 — 서증명 작은따옴표 + '참조'(민사 06)", None),
     (r"연·성행·환경|연령·성행·환경", "형법 제51조 제1호 '지능' 누락", None),
     (r"증 제[○\dN]+호(?!증)", "형사 서증 표기 — '증 제N호증'", None),
     (r"매매\(제568조 이하\)|연대보증\(제437조\)|상법\(회사·상행위·어음·수표\)", "자문 03·SKILL 민법·상법 범위 오기", None),
@@ -119,6 +116,28 @@ DRIFT_PATTERNS: list[tuple[str, str, str | None]] = [
     (r"민사집행법·행정소송법은 [^)]*노출되지 않|`/book/list`의 \*\*\"법령별 도서목록\"\(모달\)|전체 DOM을 2벌(?:로 그린다| 렌더한다)",
      "lbox 주석서 화면 낡은 서술 — 법령 그룹 노출·도서목록 모달 위치·1벌 렌더(filter-map·extraction)", None),
     (r"문서범위 칩|전문판례|`read_page`로 (?:구조|결과 영역 구조|카드 단위)", "bigcase 낡은 서술 — 문서범위 칩 없음, read_page는 class·data-*를 안 보여 줌(JS 프로브)", None),
+    # 2.5.5 — 위키 직접 반영 제거분의 재발 방지(사무소 서식·해제된 제한). 실제 사건 예문은 공개 저장소에 남기지 않으려고 패턴으로도 적지 않는다
+    (r"HWP 개요번호 표준", "번호 체계 설명 — 공문서 항목 구분 순서(기본-문체-규칙 4.)", None),
+    (r"강조가 필요할 때만|강조 필요 시만|강조 시만", "큰따옴표 직접 인용 제한 — 해제됨(판례-인용-정책 2.2)", None),
+    (r"12범주|첫 항목 고정|머리 숙여 구합니다|결심 (?:기일 )?3종 세트|고정 순서 9요소|\(가장 빈번\)",
+     "사무소 특유 정형 — 일반 관행으로(2.5.5)", None),
+    (r"호증(?:의 [\d○N]+(?:, ?[\d○N]+)*)? (?:각 )?['‘][^'’\n]+['’]", "서증명 작은따옴표 — 일반형 '(갑 제1호증 매매계약서 참조)'(기본 서식 아님)", None),
+]
+# 개별 스킬(skills/ 아래 SKILL.md·references·evals) 전용: 위키는 shared/LLM-wiki-연동-정책.md로만 참조한다 —
+# 위키 자산·경로·절 번호·코퍼스 근거를 스킬에 적지 않고, 지식베이스 부재는 알리지 않는다(연동 정책 1.)
+SKILL_TREE_PATTERNS: list[tuple[str, str, str | None]] = [
+    (r"위키|(?i:llm-wiki)(?!-연동-정책)", "위키 직접 참조 — 개별 스킬은 연동 정책(shared/LLM-wiki-연동-정책.md)만 가리킨다", None),
+    (r"서면가이드|서면DB|선례DB|즐겨쓰는판례|00_인덱스|_카탈로그|_인용규약|doc_id|코퍼스|자작 서면|형사특칙|자문특칙"
+     r"|verified|이 사무소|사무소 (?:골격|정형|표준)|프레임 [①②]|(?:구조|문체|문형)/[가-힣_]+\.md|공통 §|사안의 개요 및 질의의 요지",
+     "위키 구조 노출 — 자산·경로·절·코퍼스 근거는 연동 정책에만 둔다", None),
+    (r"지식베이스가 없[^\n]{0,60}(?:고지|알리|알린|보고)", "지식베이스 부재 고지 — 조용히 생략한다(연동 정책 1.)", r"알리지 않|보고하지 않|고지하지 않"),
+    (r"【검토의 요지】|개진문|배척 후치|결론 선언형|조문 박스|미시구조|준비서면 [AB]형|기능형",
+     "위키 내부 용어 — 일반 용어로 풀어 쓴다", None),
+]
+# 연동 정책을 뺀 모든 린트 대상(shared·README 포함): 위키 문체 근거 표지 — 공개 규범은 일반 관행 기준이다
+NON_POLICY_PATTERNS: list[tuple[str, str, str | None]] = [
+    (r"위키 (?:공통|서면가이드|형사특칙|자문특칙|준비서면)|코퍼스 실측|자작 서면 코퍼스|사용자 확정|기계 문체|무부호|인용규약 §",
+     "위키 문체 근거 표지 — 공개 규범은 일반 관행 기준, 위키는 연동 정책으로만", None),
 ]
 # SKILL.md 크기 한도: 컴팩션 뒤 하니스가 SKILL.md를 전문 재첨부하는 상한(약 2만 UTF-16 단위) — 넘으면 뒷부분이 잘린다
 SKILL_REATTACH_LIMIT = 20000
@@ -247,7 +266,9 @@ def main() -> None:
             continue
         text = md.read_text(encoding="utf-8")
         rel = md.relative_to(ROOT)
-        pats = DRIFT_PATTERNS + (SKILL_ONLY_PATTERNS if md.name == "SKILL.md" else [])
+        pats = (DRIFT_PATTERNS + (SKILL_ONLY_PATTERNS if md.name == "SKILL.md" else [])
+                + (SKILL_TREE_PATTERNS if md in md_targets else [])
+                + (NON_POLICY_PATTERNS if md.name != "LLM-wiki-연동-정책.md" else []))
         for i, line in enumerate(text.splitlines(), 1):
             for pat, why, allow in pats:
                 if re.search(pat, line) and not (allow and re.search(allow, line)):
@@ -263,6 +284,16 @@ def main() -> None:
                 refs = sorted((sk_dir / "references").glob(f"{num}-*.md"))
                 if not refs or not has_section(refs[0].read_text(encoding="utf-8"), sec):
                     errors.append(f"{rel}: 끊긴 절 포인터 '{num} {sec}장'")
+
+    # 6) 드리프트 린트(계속) — 평가 자산(evals/ 아래 json·md)도 개별 스킬이므로 위키 참조 린트(SKILL_TREE·NON_POLICY)만 건다
+    for sk in skills:
+        for ev in sorted((sk / "evals").rglob("*")):
+            if ev.suffix not in (".json", ".md") or not ev.is_file():
+                continue
+            for i, line in enumerate(ev.read_text(encoding="utf-8").splitlines(), 1):
+                for pat, why, allow in SKILL_TREE_PATTERNS + NON_POLICY_PATTERNS:
+                    if re.search(pat, line) and not (allow and re.search(allow, line)):
+                        errors.append(f"{ev.relative_to(ROOT)}:{i}: 드리프트 — {why}")
 
     # 8) 스킬 수 표기 — 스킬을 더하거나 뺄 때 배포 문서의 개수 표기가 남기 쉽다
     #    저장소 README·마켓플레이스는 여러 플러그인을 담으므로 자기 이름이 든 줄·자기 항목만 본다

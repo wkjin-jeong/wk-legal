@@ -11,7 +11,7 @@
   {"query": "회사 컴플라이언스 관련 자문의견서 초안 써줘", "should_trigger": true, "note": "ko-criminal-drafting 세트 음성 행과 같은 질의"},
   {"query": "작성 중인 여신약관 검토 의견서 초안 첨부할게. 검토해서 보완해줘", "should_trigger": true, "note": "모드 B"},
   {"query": "기존 자문의견서의 이상거래 탐지 쟁점만 판례 보강해서 추가 검토해줘", "should_trigger": true, "note": "모드 C"},
-  {"query": "부동산 공매 시 부가가치세 정산 약정에 따라 매수인이 부가가치세를 부담하는지에 대한 자문의견서 초안 써줘", "should_trigger": true, "note": "세무 인접 사법 쟁점 의견서 — 공통 기준안 7(ADV-23 (b))"},
+  {"query": "매매계약서의 세금 부담 조항에 따라 가산세를 매도인과 매수인 중 누가 부담하는지 검토하는 법률 의견서 초안 써줘", "should_trigger": true, "note": "세무 인접 사법 쟁점 의견서 — 공통 기준안 7(ADV-23 (b))"},
 
   {"query": "대여금 반환 청구 소장 초안 작성해줘. 민사 사건이야", "should_trigger": false, "expected": "ko-civil-litigation-drafting"},
   {"query": "법인세 경정청구 가능 여부에 대한 세무자문 의견 써줘", "should_trigger": false, "expected": ["none", "ko-law-api"], "note": "조세 불복·세액 판단 — 담당 스킬 없음"},
