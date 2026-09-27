@@ -21,7 +21,7 @@ python3 scripts/law_api.py get --target eflaw --mst <버전 MST> --efyd <그 버
 
 - `--jo`와 함께 쓰지 못한다 — 조문을 지정하면 응답에 별표가 빠진다.
 - 없는 번호면 그 버전의 별표 목록(번호·제목)을 보이고 exit 2로 끝난다. 목록에서 번호를 골라 다시 실행한다.
-- 인용할 때는 선택본(stderr 헤더)과 머리 한 줄의 `별표시행일자`를 함께 적는다. 표·서식 모양이 중요하면 머리 한 줄의 파일 링크를 `download --url`로 받는다.
+- 인용할 때는 선택본(stderr 헤더)과 머리 한 줄의 `별표시행일자`를 함께 적는다. `별표시행일자`는 그 버전의 시행일로 모든 별표에 찍히므로 그 별표가 개정된 날이 아니다 — 별표 개정 여부는 본문 첫 줄의 `<개정 …>` 표지나 두 기준일 본문 대조로 판단한다. 표·서식 모양이 중요하면 머리 한 줄의 파일 링크를 `download --url`로 받는다.
 - 스크립트를 쓸 수 없으면 `--jo`·`--text` 없이 `--save-to`로 원시 응답을 받아 `<별표단위>`의 `별표제목`·`별표시행일자`·`별표내용`을 확인한다.
 - 자치법규 본문의 별표는 첨부 묶음뿐이고 본문이 비어 있다 — 아래 ordinbyl 검색 → download로 받는다.
 
@@ -30,10 +30,10 @@ python3 scripts/law_api.py get --target eflaw --mst <버전 MST> --efyd <그 버
 별표·서식은 별도 조회 API가 없고, 현행 파일은 **검색 응답에 포함된 다운로드 URL**을 통해 가져온다(기준일 별표는 위 절).
 표준 흐름은 "검색 응답 저장 → `download --from-search-xml`"이다.
 
-> ⚠ **검색 query는 "별표 자체의 이름"을 본다 — 모법명이 아니다.**
-> "건축법", "전자금융감독규정" 같은 모법명으로 검색하면 0건이 나온다.
-> 별표 자체의 통칭("안전점검 검사 결과", "위탁지정신청서") 또는 분야 키워드("옥외광고물")로 검색하거나,
-> 차라리 모법(`law`/`admrul`/`ordin`)을 먼저 검색해 본문에서 별표 정보를 확인하는 것이 일반적이다.
+> ⚠ **기본 검색(`--search 1`, 별표명)의 query는 "별표 자체의 이름"을 본다 — 모법명이 아니다.**
+> 기본 검색에서는 "건축법", "전자금융감독규정" 같은 모법명으로 검색하면 0건이 나온다.
+> 별표 자체의 통칭("안전점검 검사 결과", "위탁지정신청서") 또는 분야 키워드("옥외광고물")로 검색한다.
+> 모법별 별표 목록은 `--search 2`(관련법령명 검색 — licbyl '건축법' 99건, admbyl '전자금융감독규정' 37건, 2026-09-27 실측)로 받는다.
 > 모든 별표·서식을 받아 추후 필터링하려면 `--query "*"`로 wildcard 검색이 가능하지만 totalCnt가 매우 크므로(licbyl ~3.9만, admbyl ~8.3만) `--display`/`--page`로 페이지네이션 필수.
 
 > 응답의 `<별표명>` CDATA에는 검색어 강조용 `<strong>` HTML 태그가 끼어 있을 수 있다.
@@ -53,6 +53,10 @@ python3 scripts/law_api.py search --target licbyl --query "위탁지정신청서
 python3 scripts/law_api.py download --from-search-xml <작업 폴더>/byl_search_licbyl.xml \
     --out-dir <작업 폴더>/byl_downloads --extract-text --limit 5
 
+# 1') 모법별 목록 — 관련법령명 검색
+python3 scripts/law_api.py search --target licbyl --query "건축법" --search 2 \
+    --display 20 --save-to <작업 폴더>/byl_search_licbyl.xml
+
 # 3) 단건 직접 다운로드 (URL을 직접 알 때)
 python3 scripts/law_api.py download --url "/DRF/lawService.do?...별표파일URL..." \
     --filename "건축법_별표1" --extract-text
@@ -60,6 +64,7 @@ python3 scripts/law_api.py download --url "/DRF/lawService.do?...별표파일URL
 
 행정규칙 별표·서식은 `--target admbyl`, 자치법규는 `--target ordinbyl`을 사용한다.
 응답의 다운로드 URL이 상대경로(`/DRF/...`)면 스크립트가 자동으로 `https://www.law.go.kr` 호스트를 붙여 절대화한다.
+받지 못한 파일(HTTP 오류·0바이트·HTML 응답·'파일이 없습니다' 안내)은 저장하지 않고 `FAILED: <URL> (<사유>)`를 낸다 — `--url`은 exit 3, `--from-search-xml`은 'N건 중 M건 실패'와 함께 모두 실패면 exit 3·일부 실패면 exit 1. 검색 XML이 0건이면 '검색 결과가 0건입니다'(exit 1)이므로 검색어·`--search 2`를 고친다. `--dry-run download`는 URL과 저장 예정 경로만 보인다.
 
 **전제**: PDF 텍스트 추출에는 `pdftotext`(poppler-utils)가 필요. 설치되어 있지 않으면 PDF 파일은 저장만 되고 텍스트는 추출되지 않는다.
 HWP/HWPX는 자동 텍스트 추출이 어렵다 — 파일만 저장하고 사용자에게 안내한다.

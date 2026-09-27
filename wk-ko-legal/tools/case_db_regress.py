@@ -3,12 +3,13 @@
 
     python3 tools/case_db_regress.py
 
-기대값은 2026-09-25 판례DB 기준이다(재정·심판·병합 사례는 2026-09-27 — 보유 판례가 바뀌면 사례를 다시 고른다). 위키에는 아무것도 쓰지 않는다 —
+기대값은 2026-09-25 판례DB 기준이다(재정·심판·병합·참조조문·인용 표기·원본 경로 사례는 2026-09-27 — 보유 판례가 바뀌면 사례를 다시 고른다). 위키에는 아무것도 쓰지 않는다 —
 검사 전후로 색인 파일과 정규화 도구 폴더의 수정 시각을 비교한다.
 """
 from __future__ import annotations
 
 import os
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -24,8 +25,21 @@ def check(name: str, ok: bool, detail: str = "") -> None:
     RESULTS.append((name, bool(ok), detail))
 
 
-def run(*args: str, env: dict | None = None) -> subprocess.CompletedProcess:
-    return subprocess.run([sys.executable, SCRIPT, *args], env=env or ENV, capture_output=True, text=True)
+def run(*args: str, env: dict | None = None, cwd: str | None = None) -> subprocess.CompletedProcess:
+    return subprocess.run([sys.executable, SCRIPT, *args], env=env or ENV, cwd=cwd, capture_output=True, text=True)
+
+
+def synth_wiki(t: str) -> str:
+    """수집 2건(최대 2026-06-15) + 수행 1건(2026-08-20)의 최소 합성 색인 — 수집 최대 선고일을 따로 내는지 본다."""
+    os.makedirs(os.path.join(t, "판례DB"))
+    con = sqlite3.connect(os.path.join(t, "판례DB", "_색인.sqlite"))
+    con.execute("CREATE TABLE cases(case_id TEXT PRIMARY KEY, date TEXT, text_status TEXT, file TEXT)")
+    con.executemany("INSERT INTO cases VALUES (?, ?, ?, ?)", [
+        ("대법원 2026다1", "2026-06-15", "official-html", "수집/민사/a.md"),
+        ("대법원 2025다1", "2025-01-02", "official-html", "수집/민사/b.md"),
+        ("서울고등법원 2026나1", "2026-08-20", "auto-extracted", "수행/민사/c.md")])
+    con.commit(); con.close()
+    return t
 
 
 def stamp() -> tuple:
@@ -87,6 +101,54 @@ def main() -> None:
     check("미보유 → exit 2", r.returncode == 2 and "판례DB에 없음" in r.stderr)
     r = run("search", "--case-no", "92다49218")
     check("사건번호 2자리 연도 입력 정규화", r.returncode == 0 and "92다49218" in r.stdout, r.stdout[:200])
+    r = run("search", "--law-ref", "민법 750조", "--court", "대법원", "--limit", "1")
+    check("참조조문 약식 입력('민법 750조')", r.returncode == 0 and "0건" not in r.stdout, r.stdout[:200])
+    r2 = run("search", "--law-ref", "민법750조", "--court", "대법원", "--limit", "1")
+    check("참조조문 붙여 쓴 입력('민법750조')", r2.returncode == 0 and r2.stdout == r.stdout, r2.stdout[:200])
+    for q in ("상법 제335조의7", "상법 335조의7", "상법 제335.7조"):
+        r = run("search", "--law-ref", q)
+        check(f"가지조문 표기 혼재({q})", "2018다292975" in r.stdout and "2014다221258" in r.stdout, r.stdout[:200])
+    r = run("search", "--keyword", "소멸시효")
+    check("--keyword 적재 없음 NOTE", r.returncode == 0 and "keywords" in r.stderr, r.stderr[-200:])
+    for q, want in (("대법원 2000. 1. 21. 선고 97다1013", "case_id=대법원 1997다1013"),
+                    ("대법원 2000. 1. 21. 선고 97다1013 판결", "case_id=대법원 1997다1013"),
+                    ("대법원 2019. 4. 10.자 2017마6337 결정", "case_id=대법원 2017마6337"),
+                    ("대법원 2023. 4. 27. 선고 2022다302497, 302503 판결", "case_id=대법원 2022다302497"),
+                    ("대법원 1997. 8. 21. 선고 95다28625 판결(공1997하, 2765)", "case_id=대법원 1995다28625"),
+                    ("대법원 1997. 8. 21. 선고 95다28625 전원합의체 판결 등 참조", "case_id=대법원 1995다28625")):
+        r = run("read", q, "--max-chars", "50")
+        check(f"인용 표기 입력({q})", r.returncode == 0 and want in r.stdout, r.stdout[:200] + r.stderr[-200:])
+    r = run("read", "대법원 1996. 4. 12. 선고 95다28625", "--max-chars", "10")
+    check("인용 표기 선고일 불일치 NOTE", r.returncode == 0 and "입력 선고일 1996-04-12" in r.stderr, r.stderr[-200:])
+    r = run("read", "대법원 2023다318857", "--max-chars", "10")
+    check("원본 절대경로(수집/ — 판례DB 폴더 기준)", "원본: /" in r.stdout and "(있음)" in r.stdout, r.stdout[:400])
+    r = run("read", "대법원 2019다247385", "--max-chars", "10")
+    check("원본 official-xml → pdf 없음", "pdf 없음" in r.stdout, r.stdout[:400])
+    r = run("fulltext", '"87도84" 변경하기로', "--en-banc")
+    check("사건번호 구절이 더 긴 번호('87도840')에 걸리지 않음", r.returncode == 0 and "2016도21314" not in r.stdout,
+          r.stdout[:200])
+    r = run("fulltext", '"2010도10352" 변경하기로', "--en-banc")
+    check("판례 변경 검색 참양성 유지", "2016도21314" in r.stdout, r.stdout[:200])
+    r = run("fulltext", '"87도8"', "--limit", "1")
+    check("사건번호 거름 뒤 부족하면 --limit 안내", "더 있을 수 있으니" in r.stderr, r.stderr[-200:])
+    r = run("citing", "76다2418", "--limit", "2")
+    check("미보유 판례의 인용 판례(미보유 표시)",
+          r.returncode == 0 and r.stdout.startswith("case_id=대법원 1976다2418 (미보유") and "87다카1129" in r.stdout,
+          r.stdout[:300] + r.stderr[-200:])
+    r = run("citing", "2099다1")
+    check("미보유·인용 없음 citing → exit 2", r.returncode == 2 and "판례DB에 없음" in r.stderr, r.stderr[-200:])
+    r = run("info")
+    check("info 수집 선고일(원격 비교 기준)", "수집 선고일" in r.stdout, r.stdout[-300:])
+    r = run("--root", os.path.basename(WIKI), "info", cwd=os.path.dirname(WIKI))
+    check("상대경로 --root", r.returncode == 0, r.stderr[-200:])
+    r = run("info", env={**ENV, "WK_LEGAL_WIKI_ROOT": os.path.basename(WIKI)}, cwd=os.path.dirname(WIKI))
+    check("상대경로 WK_LEGAL_WIKI_ROOT", r.returncode == 0, r.stderr[-200:])
+    with tempfile.TemporaryDirectory() as t:
+        r = run("--root", "nope", "info", cwd=t)
+        check("상대경로 --root 실패 시 절대경로로 안내", r.returncode == 2 and os.path.join(os.path.realpath(t), "nope")
+              in os.path.realpath(r.stderr.split("찾은 곳: ")[-1].split(" (")[0]), r.stderr[-200:])
+    r = run("info", env={**ENV, "WK_LEGAL_WIKI_ROOT": "/nonexistent"})
+    check("env 지정 경로가 없으면 exit 2(폴백 없음)", r.returncode == 2, r.stderr[-200:])
     with tempfile.TemporaryDirectory() as t:
         os.makedirs(os.path.join(t, "mnt"))
         os.symlink(WIKI, os.path.join(t, "mnt", "LLM-wiki"))
@@ -94,6 +156,19 @@ def main() -> None:
         env["HOME"] = t
         r = run("info", env=env)
         check("Cowork 마운트 위치(~/mnt/LLM-wiki) 발견", r.returncode == 0 and "로컬 판례DB:" in r.stdout, r.stderr)
+    with tempfile.TemporaryDirectory() as t:
+        os.makedirs(os.path.join(t, "mnt", "user"))
+        os.symlink(WIKI, os.path.join(t, "mnt", "user", "LLM-wiki"))
+        env = {k: v for k, v in ENV.items() if k != "WK_LEGAL_WIKI_ROOT"}
+        env["HOME"] = t
+        r = run("info", env=env)
+        check("기본 경로 밖 깊이 3 마운트(~/mnt/user/LLM-wiki) 발견", r.returncode == 0 and "로컬 판례DB:" in r.stdout, r.stderr)
+        check("$HOME 탐색으로 찾으면 --root·env 지정 안내", "$HOME 탐색" in r.stderr, r.stderr[-200:])
+    with tempfile.TemporaryDirectory() as t:
+        r = run("--root", synth_wiki(t), "info")
+        check("합성 색인: 수행이 더 늦어도 수집 최대 선고일은 따로",
+              "~ 2026-08-20" in r.stdout and "수집 선고일 2025-01-02 ~ 2026-06-15" in r.stdout and "수행 1건" in r.stdout,
+              r.stdout[-400:] + r.stderr[-200:])
 
     check("위키 무변경(색인·도구 폴더·__pycache__)", stamp() == before)
 

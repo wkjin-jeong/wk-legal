@@ -133,6 +133,72 @@ def offline() -> None:
     _, _, k2 = L._precedent_phrase(o, ph, "ordin", [o, ph])
     check("판례식: 숫자 아닌 번호·자리표시 행은 C로 보지 않음", k1 == "" and k2 == "", f"{k1!r} {k2!r}")
 
+    # 자리표시 연혁 행(시행일자 99991231·공포일자 00000000·공포번호 none) — 선택·직후 개정·계통표에서 제외(LAW-05)
+    gn = {"명칭": "서울특별시 강남구 옥외광고물 등의 관리와 옥외광고산업 진흥에 관한 조례", "계통ID": "2072455",
+          "시행일자": "20250321", "공포일자": "20250321", "공포번호": "2031", "MST": "2023185", "구분": "현행"}
+    gph = {**gn, "명칭": "서울특별시 강남구 옥외광고물 등 관리 조례", "시행일자": "99991231", "공포일자": "00000000",
+           "공포번호": "none", "MST": "915155", "구분": "연혁"}
+    pick, nxt, ex = L._pick_versions(L._dedupe_sort([dict(gn), dict(gph)]), "20251001")
+    check("자리표시: 직후 개정 없음·제외 1건", pick and pick["MST"] == "2023185" and nxt is None and ex == 1,
+          f"{pick} {nxt} {ex}")
+    gg = {"명칭": "경기도옥외광고물등관리조례", "계통ID": "2024478", "시행일자": "20060630", "공포일자": "20060630",
+          "공포번호": "3529", "MST": "873196", "구분": "연혁"}
+    pick, nxt, ex = L._pick_versions([gg, {**gg, "시행일자": "99991231", "공포일자": "19910207", "공포번호": "2104",
+                                           "MST": "1"}], "20260926")
+    check("자리표시: 시행일만 99991231인 행도 제외(시행기간 끝 99991230 금지)",
+          pick and pick["MST"] == "873196" and nxt is None and ex == 1, f"{nxt}")
+    tab = L._lineage_table(L._group_lineages([dict(gn), dict(gph)])).splitlines()
+    check("자리표시: 계통표 최신 시행일·명칭", tab[1:] == ["2072455 | 20250321 | 2 | " + gn["명칭"]
+          + " (옛 명칭: 서울특별시 강남구 옥외광고물 등 관리 조례)"], tab)
+    pick, nxt, ex = L._pick_versions([gph], "20251001")
+    check("자리표시: 모두 자리표시면 선택본 없음", pick is None and ex == 1)
+    # 선택본이 없을 때 기준일 전에 공포된 자리표시 행이 있으면 '제정 전'이 아니다(검증 보정)
+    ggp = [gg] + [{**gg, "시행일자": "99991231", "공포일자": d, "공포번호": n, "MST": m}
+                  for d, n, m in (("19980629", "2827", "2049921"), ("19910207", "2104", "887670"),
+                                  ("20020629", "3197", "887679"))]
+    early = L._placeholder_before(ggp, "20000101")
+    check("자리표시: 기준일 전 공포 행 — 공포일 오름차순, 기준일 뒤 공포는 제외",
+          [r["MST"] for r in early] == ["887670", "2049921"] and L._placeholder_before(ggp, "19900101") == []
+          and L._placeholder_before([gph], "20251001") == [], [r["MST"] for r in early])
+    # 폐지 판본(제개정구분명 폐지·타법폐지) — 판례식 '…로 폐지되기 전의 것'(대법원 2018도1966)
+    pv = {"명칭": "공공기관의 개인정보보호에 관한 법률", "시행일자": "20100505", "공포일자": "20100204",
+          "공포번호": "10012", "MST": "102478", "법령구분": "법률", "제개정": "타법개정"}
+    rv = {**pv, "시행일자": "20110930", "공포일자": "20110329", "공포번호": "10465", "MST": "111344", "제개정": "타법폐지"}
+    _, ph_r, k_r = L._precedent_phrase(pv, rv, "law", [pv, rv])
+    check("폐지: 판례식 '폐지되기 전의 것'", ph_r == "구 공공기관의 개인정보보호에 관한 법률(2011. 3. 29. 법률 제10465호로 "
+          "폐지되기 전의 것)" and k_r == "" and L._repealed(rv) and L._repealed({"제개정": "폐지"})
+          and not L._repealed(pv), ph_r)
+
+    # 조문 문언 대조 서명 — 공백·개정 표지 무시, 편·장 제목 제외(LAW-04)
+    art = ("<법령><조문><조문단위><조문여부>전문</조문여부><조문내용>제39장 사기와 공갈의 죄</조문내용></조문단위>"
+           "<조문단위><조문여부>조문</조문여부><조문내용>제347조(사기)</조문내용><항><항내용><![CDATA[{}]]></항내용></항></조문단위>"
+           "</조문></법령>")
+    s1 = L._article_sig(art.format("①사람을 기망하여 … 10년 이하의 징역 <개정 1995.12.29>"))
+    s2 = L._article_sig(art.format("① 사람을 기망하여 …  10년 이하의 징역 <개정 1995. 12. 29.>").replace("제39장", "제40장"))
+    s3 = L._article_sig(art.format("① 사람을 기망하여 … 20년 이하의 징역 <개정 2025.12.23>"))
+    check("조문 대조: 공백·개정 표지·장 제목 무시, 문언 차이는 구분", s1 == s2 and s1 != s3 and s1,
+          f"{s1} / {s2} / {s3}")
+    check("조문 대조: 조문 없는 응답 → None", L._article_sig("<법령><기본정보/></법령>") is None)
+
+    # --addenda — <부칙단위>에서 공포번호가 맞는 부칙만(LAW-R02)
+    adx = ("<법령><기본정보/><부칙>"
+           "<부칙단위 부칙키='2007122108730'><부칙공포일자>20071221</부칙공포일자><부칙공포번호>08730</부칙공포번호>"
+           "<부칙내용><![CDATA[부칙 <제8730호,2007.12.21>]]>\n<![CDATA[]]>\n<![CDATA[제3조 (공소시효에 관한 경과조치) "
+           "이 법 시행 전에 범한 죄에 대하여는 종전의 규정을 적용한다.]]>\n<![CDATA[]]></부칙내용></부칙단위>"
+           "<부칙단위 부칙키='2015073113454'><부칙공포일자>20150731</부칙공포일자><부칙공포번호>13454</부칙공포번호>"
+           "<부칙내용><![CDATA[부칙 <제13454호,2015.7.31>]]>\n<![CDATA[제2조(공소시효의 적용 배제에 관한 경과조치) "
+           "제253조의2의 개정규정은 …]]></부칙내용></부칙단위></부칙></법령>")
+    u1 = L._addenda_units(adx, ["8730"])
+    u2 = L._addenda_units(adx, ["08730"])
+    check("--addenda 번호 일치 부칙만·앞자리 0 무시·CDATA 이어 붙임",
+          u1 == u2 and len(u1) == 1 and "공소시효에 관한 경과조치" in u1[0] and "13454" not in u1[0]
+          and u1[0].startswith("부칙 <제8730호,2007.12.21>\n제3조") and "\n\n" not in u1[0], u1)
+    check("--addenda 번호 없으면 전부·번호 해석", len(L._addenda_units(adx)) == 2
+          and L._addenda_nums(["8730,13454", "제20795호"]) == ["8730", "13454", "20795"])
+    skill = open(os.path.join(ROOT, "skills", "ko-law-api", "SKILL.md"), encoding="utf-8").read()
+    check("SKILL.md 옛 문구 없음(절대 혼용·부칙 확인 권고)", "절대 혼용하지 않는다" not in skill
+          and "(부칙 확인 권고)" not in skill)
+
     # 공포본(target=law) → 시행일 기준 본문(eflaw) 요청 파라미터
     import argparse
     lb = "<법령><기본정보><법령ID>001700</법령ID><시행일자>20250712</시행일자></기본정보>{}</법령>"
@@ -190,6 +256,23 @@ def offline() -> None:
     check("admrul 제7조만 발췌", "제7조(기준)" in out and "제7조의2" not in out and "제70조" not in out)
     out = L._extract_articles(adm, "admrul", "제7조의2", "XML")
     check("admrul 제7조의2 발췌", "제7조의2" in out and "제7조(기준)" not in out)
+    one = ('<AdmRulService><행정규칙기본정보><행정규칙ID>22029</행정규칙ID></행정규칙기본정보><조문내용><![CDATA['
+           '제7장 자본거래\n제7-13조(신고의 예외거래) 본문\n제7-14조(거주자의 외화자금차입)\n ① 차입 본문\n  1. 호\n'
+           '제7-14조의2(현지법인등의 외화자금차입 등) 의2 본문\n제7-15조(보고) 보고 본문\n제8장 기타\n제8-1조(목적) 끝'
+           ']]></조문내용></AdmRulService>')
+    o1 = L._extract_articles(one, "admrul", "7-14", "XML")
+    o2 = L._extract_articles(one, "admrul", "제7-14조의2", "XML")
+    o3 = L._extract_articles(one, "admrul", "7-15", "XML")
+    check("LAW-07 한 블록 admrul: 제7-14조만(의2·7-15 없이)", "제7-14조(거주자의 외화자금차입)" in o1 and "① 차입 본문" in o1
+          and "제7-14조의2" not in o1 and "제7-15조" not in o1 and "22029" in o1, o1)
+    check("LAW-07 한 블록 admrul: 제7-14조의2만", "제7-14조의2(" in o2 and "제7-14조(" not in o2 and "제7-15조" not in o2, o2)
+    check("LAW-07 한 블록 admrul: 장 제목 앞에서 끊음", "보고 본문" in o3 and "제8장" not in o3, o3)
+    check("LAW-07 --text 평문", (L._body_text(o1) or "").splitlines()[-1] == "  1. 호", L._body_text(o1))
+    check("LAW-07 편·장식 번호 해석", [L._admrul_jo(x)[1] for x in ("7-14", "제7-14조", "제7-14조의2", "10-21의2", "7",
+                                                               "제7조의2")]
+          == ["제7-14조", "제7-14조", "제7-14조의2", "제10-21조의2", "제7조", "제7조의2"])
+    check("LAW-07 법령은 '390-2' 계속 exit 2·admrul 해석 불가 exit 2",
+          exits(L.encode_jo, "390-2") == 2 and exits(L._admrul_jo, "7-14-") == 2 and exits(L._admrul_jo, "제1항") == 2)
     ordin = ("<LawService><자치법규기본정보><자치법규ID>9</자치법규ID></자치법규기본정보><조문>"
              "<조 조문번호='000100'><조문번호>000100</조문번호><조내용><![CDATA[제1조]]></조내용></조>"
              "<조 조문번호='000200'><조문번호>000200</조문번호><조내용><![CDATA[제2조]]></조내용></조>"
@@ -206,10 +289,19 @@ def offline() -> None:
             '<법령약칭명></법령약칭명><법령ID>001706</법령ID><법령상세링크>/DRF/lawService.do?OC=***&amp;MST=1</법령상세링크></law>'
             '<law id="2"><법령일련번호>188376</법령일련번호><법령명한글>난민|법</법령명한글><법령ID>011546</법령ID></law>'
             '</LawSearch>')
-    tab = (L._search_table(srch, "law") or "").splitlines()
+    tab = (L._search_table(srch, "law", display=2) or "").splitlines()
     check("search 표: 머리 줄·다음 쪽 안내", tab[:1] == ["# law '민법' — totalCnt 9, page 1, 2건 (다음 쪽: --page 2)"], tab[:1])
     check("search 표: 태그 이름 열·빈 열 생략·링크 제외", tab[1:2] == ["법령명한글 | 법령ID | 법령일련번호 | 현행연혁코드"]
           and tab[2] == "민법 | 001706 | 284415 | 현행" and tab[3].startswith("난민¦법"), tab)
+    # 다음 쪽 판정은 요청한 display 기준 — numOfRows는 이번 쪽의 실제 건수다(LAW-06).
+    def pg(total: int, page: int, n: int, display: int) -> str:
+        body = (f"<LawSearch><키워드>x</키워드><totalCnt>{total}</totalCnt><page>{page}</page><numOfRows>{n}</numOfRows>"
+                + "".join(f"<law><법령명한글>a{i}</법령명한글></law>" for i in range(n)) + "</LawSearch>")
+        return (L._search_table(body, "law", display=display) or "").splitlines()[0]
+    h1, h2, h3 = pg(2, 2, 0, 4), pg(9, 2, 4, 5), pg(12, 2, 5, 5)
+    check("LAW-06 다음 쪽: 빈 쪽·마지막 부분 쪽은 안내 없음, 남으면 안내",
+          "(다음 쪽" not in h1 and "마지막 쪽을 지났습니다 — 전체 1쪽" in h1 and "(다음 쪽" not in h2
+          and h3.endswith("(다음 쪽: --page 3)"), f"{h1} / {h2} / {h3}")
     byl = ('<licBylSearch><totalCnt>1</totalCnt><page>1</page><ordinbyl><별표명><![CDATA[(별지) <strong class="x">옥외</strong>]]></별표명>'
            '<별표서식파일링크>/LSW/flDownload.do?gubun=ELIS&amp;flSeq=1&amp;flNm=%28abc</별표서식파일링크></ordinbyl></licBylSearch>')
     tab = (L._search_table(byl, "ordinbyl") or "").splitlines()
@@ -268,6 +360,82 @@ def offline() -> None:
     check("--org 기관명 → exit 2, 코드는 통과", o1.returncode == 2 and "기관 코드" in o1.stderr
           and o2.returncode == 0 and "org=6110000" in o2.stdout, o1.stderr[-200:] + o2.stdout[-200:])
 
+    # LAW-08 --ancyd 거부·--lang EN → target=elaw
+    a8 = subprocess.run([sys.executable, SCRIPT, "--dry-run", "get", "--target", "law", "--id", "001248", "--ancyd",
+                         "20200609"], env=denv, capture_output=True, text=True)
+    e8 = subprocess.run([sys.executable, SCRIPT, "--dry-run", "get", "--target", "law", "--id", "001248", "--lang", "EN",
+                         "--jo", "3"], env=denv, capture_output=True, text=True)
+    m8 = subprocess.run([sys.executable, SCRIPT, "--dry-run", "get", "--target", "law", "--mst", "1", "--lang", "EN"],
+                        env=denv, capture_output=True, text=True)
+    check("LAW-08 --ancyd → exit 2·get-asof 안내", a8.returncode == 2 and "get-asof" in a8.stderr and not a8.stdout,
+          a8.stderr[-200:])
+    check("LAW-08 --lang EN → target=elaw·LANG 없음, --mst는 exit 2", e8.returncode == 0 and "target=elaw" in e8.stdout
+          and "LANG" not in e8.stdout and "ID=001248" in e8.stdout and m8.returncode == 2, e8.stdout + m8.stderr[-200:])
+    el = ('<Law><InfSection><lsId>001248</lsId><ancYd>20121015</ancYd><ancNo>00996</ancNo><lsNmEng><![CDATA[X ACT]]>'
+          '</lsNmEng></InfSection><JoSection><Jo No="1"><joNo>0003</joNo><joBrNo>00</joBrNo><joYn>N</joYn><joCts>'
+          '<![CDATA[CHAPTER I]]></joCts></Jo><Jo No="2"><joNo>0003</joNo><joBrNo>00</joBrNo><joYn>Y</joYn><joCts>'
+          '<![CDATA[Article 3 (A) text]]></joCts></Jo><Jo No="3"><joNo>0003</joNo><joBrNo>02</joBrNo><joYn>Y</joYn>'
+          '<joCts><![CDATA[Article 3-2 (B)]]></joCts></Jo></JoSection><ArSection><Ar><arCts>ADDENDA</arCts></Ar>'
+          '</ArSection></Law>')
+    hit, lab = L._elaw_articles(el, "3")
+    hit2, _ = L._elaw_articles(el, "제3조의2")
+    check("LAW-08 영문본 조 발췌(장 제목·가지조 제외)", lab == "Article 3" and len(hit) == 1 and "text" in hit[0]
+          and len(hit2) == 1 and "3-2" in hit2[0], str(hit))
+    check("LAW-08 영문본 --text", (L._body_text(el) or "").splitlines()[0] == "X ACT · 법령ID 001248 · 번역 기준 공포 "
+          "20121015 · 제996호" and "ADDENDA" not in (L._body_text(el) or ""), L._body_text(el))
+
+    # LAW-09 dry-run은 호출·저장하지 않는다(get-asof 버전 검색, download)
+    with tempfile.TemporaryDirectory() as t:
+        cenv = {**denv, "WK_LEGAL_CACHE_DIR": os.path.join(t, "cache")}
+        g9 = subprocess.run([sys.executable, SCRIPT, "--dry-run", "get-asof", "--lid", "010199", "--date", "20150101",
+                             "--jo", "9"], env=cenv, capture_output=True, text=True)
+        n_cache = sum(len(f) for _, _, f in os.walk(os.path.join(t, "cache")))
+        check("LAW-09 get-asof dry-run: 검색 URL만·캐시 0·선택 헤더 없음", g9.returncode == 0 and "OC=***" in g9.stdout
+              and "target=eflaw" in g9.stdout and "LID=010199" in g9.stdout and n_cache == 0
+              and "선택본" not in g9.stderr and "dummykey_xyz" not in g9.stdout, g9.stdout + g9.stderr[-200:])
+        a9 = subprocess.run([sys.executable, SCRIPT, "--dry-run", "get-asof", "--target", "admrul", "--query", "x",
+                             "--date", "20150101", "--jo", "7-14"], env=cenv, capture_output=True, text=True)
+        check("LAW-09 get-asof admrul dry-run: 현행·연혁 두 URL", a9.returncode == 0
+              and len(a9.stdout.split()) == 2 and "nw=2" in a9.stdout, a9.stdout + a9.stderr[-200:])
+        d9 = subprocess.run([sys.executable, SCRIPT, "--dry-run", "download", "--url", "/LSW/flDownload.do?flSeq=1",
+                             "--out-dir", os.path.join(t, "x")], env=cenv, capture_output=True, text=True)
+        check("LAW-09 download dry-run: URL·예정 경로만, 폴더 미생성", d9.returncode == 0
+              and "https://www.law.go.kr/LSW/flDownload.do?flSeq=1" in d9.stdout and os.path.join(t, "x") in d9.stdout
+              and not os.path.exists(os.path.join(t, "x")), d9.stdout + d9.stderr[-200:])
+        # LAW-10 인자 없음 → exit 2, 기본 저장 폴더 미생성
+        w = os.path.join(t, "w")
+        os.makedirs(w)
+        n10 = subprocess.run([sys.executable, SCRIPT, "download"], cwd=w, env=cenv, capture_output=True, text=True)
+        check("LAW-10 download 인자 없음 → exit 2·byl_downloads 미생성", n10.returncode == 2 and os.listdir(w) == [],
+              n10.stderr[-200:] + str(os.listdir(w)))
+        # 없는 검색 XML → 트레이스백 없이 exit 2, 저장 폴더 안내·생성 없음
+        m10 = subprocess.run([sys.executable, SCRIPT, "download", "--from-search-xml", os.path.join(t, "none.xml")],
+                             cwd=w, env=cenv, capture_output=True, text=True)
+        check("download 없는 검색 XML → exit 2·'읽을 수 없습니다'·트레이스백 없음", m10.returncode == 2
+              and "검색 XML 파일을 읽을 수 없습니다" in m10.stderr and "Traceback" not in m10.stderr
+              and "저장합니다" not in m10.stderr and os.listdir(w) == [], m10.stderr[-300:])
+        # --display 상한 100 — 요청도 100으로(서버는 쪽당 100건·100건 단위 쪽)
+        s6 = subprocess.run([sys.executable, SCRIPT, "--dry-run", "search", "--target", "licbyl", "--query", "*",
+                             "--display", "150"], env=cenv, capture_output=True, text=True)
+        check("LAW-06 --display 150 → NOTE·display=100 요청", s6.returncode == 0 and "display=100" in s6.stdout
+              and "상한은 100" in s6.stderr, s6.stdout + s6.stderr[-200:])
+        # LAW-11 0건 검색 XML → '검색 결과가 0건', 태그 보강 안내 없음
+        zx = os.path.join(t, "z.xml")
+        with open(zx, "w", encoding="utf-8") as f:
+            f.write('<?xml version="1.0" encoding="UTF-8"?><LicBylSearch><target>licbyl</target><키워드>건축법</키워드>'
+                    '<totalCnt>0</totalCnt><page>1</page><numOfRows>0</numOfRows><resultCode>00</resultCode>'
+                    '</LicBylSearch>')
+        z11 = subprocess.run([sys.executable, SCRIPT, "download", "--from-search-xml", zx, "--out-dir",
+                              os.path.join(t, "o")], env=cenv, capture_output=True, text=True)
+        check("LAW-11 0건 XML → '검색 결과가 0건'·--search 2 안내, 태그 보강 문구 없음", z11.returncode == 1
+              and "검색 결과가 0건" in z11.stderr and "--search 2" in z11.stderr
+              and "BYL_LINK_TAG_HINTS" not in z11.stderr and not os.path.exists(os.path.join(t, "o")), z11.stderr)
+    pe = L._download_payload_error
+    check("LAW-10 가짜 파일 판정", pe(b"", "image/gif") is not None
+          and pe("<script>alert(' 파일이 없습니다. ');</script>".encode(), "text/html;charset=UTF-8") is not None
+          and pe(b"<html>x</html>", "text/html") is not None and pe(b"%PDF-1.4 ...", "application/pdf") is None
+          and pe(b"\xd0\xcf\x11\xe0hwp", "application/octet-stream") is None)
+
     # 키 파일 탐색 — (a) 상위 폴더의 .law_api.env, (b) 키 없는 cwd .env는 건너뛰고 ~/.config를 읽되 FOO는 주입 안 함.
     code = "import os, law_api as L; print(L.resolve_oc(None), os.environ.get('FOO'), os.environ.get('OTHER'))"
     clean = {k: v for k, v in BASE_ENV.items() if k not in ("LAW_GO_KR_OC", "LAW_API_DOTENV")}
@@ -289,6 +457,14 @@ def offline() -> None:
         r = subprocess.run([sys.executable, "-c", code], cwd=work, env=env, capture_output=True, text=True)
         check("키 파일: 키 없는 cwd .env 건너뜀·다른 키 미주입", r.stdout.split() == ["from_config", "None", "None"],
               r.stdout + r.stderr[-200:])
+
+    # get-asof 기준일이 오늘 뒤면 시행예정(nw=2)까지 검색 — 시행예정 판본을 고르도록(P2 교차 점검)
+    import argparse as _ap
+    today = L._today()
+    ns = lambda nw=None: _ap.Namespace(nw=nw)
+    check("nw: 기준일 ≤ 오늘 → 1,3 / 오늘 뒤 → 1,2,3 / --nw 지정 우선",
+          L._law_nw(ns(), today) == "1,3" and L._law_nw(ns(), "29991231") == "1,2,3"
+          and L._law_nw(ns("3"), "29991231") == "3" and L._law_nw(ns(), None) == "1,3")
 
 
 # ---------------------------------------------------------------------------
@@ -441,6 +617,120 @@ def live() -> None:
         check("--byl 없는 번호 → exit 2·목록", r.returncode == 2 and "[별표 3의2]" in r.stderr, r.stderr[-300:])
         r = run(["get-asof", "--target", "admrul", "--query", "전자금융감독규정", "--date", "20241225", "--byl", "1"], env=env)
         check("--byl 행정규칙 별표", r.returncode == 0 and r.stdout.startswith("[별표 1] 정보기술부문"), r.stdout[:200])
+        # 조문 단위 대조·조문 기준 판례식(LAW-04)
+        r = run(["get-asof", "--lid", "001692", "--date", "20250106", "--jo", "356", "--text"], env=env)
+        check("LAW-04 문언이 현행과 같으면 통상 표기 안내", r.returncode == 0 and "현행과 같습니다" in r.stderr
+              and "구법 표기 필수" not in r.stderr and "조문 기준 판례식" not in r.stderr, r.stderr[-400:])
+        r = run(["get-asof", "--lid", "001692", "--date", "20240410", "--jo", "347", "--text"], env=env)
+        art = r.stderr.split("조문 기준 판례식:")[-1].split("\n")[0]
+        check("LAW-04 형법 제347조: 법령 기준 제20795호·조문 기준 제21231호", r.returncode == 0
+              and "판례식: 구 형법(2025. 3. 18. 법률 제20795호로 개정되기 전의 것)" in r.stderr
+              and "구 형법(2025. 12. 23. 법률 제21231호로 개정되기 전의 것)" in art and "구법 표기 필수" in r.stderr, art)
+        r = run(["get-asof", "--lid", "001638", "--date", "20190901", "--jo", "148의2", "--text"], env=env)
+        art = r.stderr.split("조문 기준 판례식:")[-1].split("\n")[0]
+        check("LAW-04 도로교통법 제148조의2 = 대법원 2022도3929 특정(제17371호)", r.returncode == 0
+              and "구 도로교통법(2020. 6. 9. 법률 제17371호로 개정되기 전의 것)" in art, art)
+        r = run(["get-asof", "--lid", "001638", "--date", "20190901", "--jo", "148의2", "--max-steps", "2"], env=env)
+        check("LAW-04 탐색 상한 도달 안내", r.returncode == 0 and "--max-steps를 늘리세요" in r.stderr, r.stderr[-300:])
+        # 자리표시 연혁 행 제외(LAW-05)
+        gq = ["--target", "ordin", "--query", "서울특별시 강남구 옥외광고물 등의 관리와 옥외광고산업 진흥에 관한 조례",
+              "--org", "6110000", "--sborg", "3220000"]
+        r = run(["get-asof", *gq, "--date", "20251001", "--jo", "2", "--text"], env=env)
+        check("LAW-05 자리표시 행이 직후 개정으로 붙지 않음", r.returncode == 0
+              and not any(x in r.stderr for x in ("0. 0. 0.", "제none호", "99991231", "직후 개정:", "직후 변동:"))
+              and "기준일 현재 시행본이 현행과 동일" in r.stderr, r.stderr[-400:])
+        r = run(["versions", *gq], env=env)
+        check("LAW-05 versions 계통표 최신 시행일·자리표시 표지", r.returncode == 0
+              and "2072455 | 20250321 |" in r.stderr and "(자리표시 — 선택 제외)" in r.stdout, r.stderr[-300:])
+        # 자리표시·폐지 판본(검증 보정) — 경기도옥외광고물등관리조례 계통 2024478
+        gg = ["--target", "ordin", "--query", "경기도옥외광고물등관리조례", "--lid", "2024478"]
+        r = run(["get-asof", *gg, "--date", "20000101"], env=env)
+        check("자리표시: 기준일 전 공포 행 → '제정 전' 대신 시행일 미상 안내", r.returncode == 2
+              and "특정할 수 없습니다" in r.stderr and "1991. 2. 7. 제2104호" in r.stderr
+              and "제정 전 시점" not in r.stderr, r.stderr[-400:])
+        r = run(["get-asof", *gg, "--date", "19900101"], env=env)
+        check("자리표시: 첫 공포 전이면 '제정 전'", r.returncode == 2 and "제정 전 시점" in r.stderr, r.stderr[-300:])
+        r = run(["get-asof", *gg, "--date", "20260926"], env=env)
+        check("폐지: 선택본이 폐지 판본이면 '⚠ 폐지본'", r.returncode == 0 and "⚠ 폐지본" in r.stderr
+              and "시행기간" not in r.stderr, r.stderr[-300:])
+        r = run(["versions", *gg], env=env)
+        check("폐지: versions 표 '(폐지)' 표지", "873196 | 2024478 | 연혁 (폐지) |" in r.stdout, r.stdout[-300:])
+        pq = ["--target", "law", "--query", "공공기관의 개인정보보호에 관한 법률", "--jo", "2", "--text"]
+        r = run(["get-asof", *pq, "--date", "20110929"], env=env)
+        check("폐지 계통: 현행 대조 생략·판례식 '폐지되기 전의 것'", r.returncode == 0 and "조문 대조를 생략" in r.stderr
+              and "제10465호로 폐지되기 전의 것" in r.stderr and "일치하는 법령" not in r.stderr, r.stderr[-400:])
+        r = run(["get-asof", *pq, "--date", "20120101"], env=env)
+        check("폐지 계통: 폐지 판본 + --jo → exit 2·폐지 전날 안내", r.returncode == 2 and "⚠ 폐지본" in r.stderr
+              and "--date 20110929" in r.stderr and "신설" not in r.stderr, r.stderr[-400:])
+        # 경과조치(기준일 뒤 개정의 부칙) 안내·조회(LAW-R02)
+        r = run(["get-asof", "--lid", "001671", "--date", "20071220", "--jo", "249", "--text"], env=env)
+        line = next((ln for ln in r.stderr.splitlines() if "경과조치 확인" in ln), "")
+        import re as _re
+        m = _re.search(r"--mst (\d+) --efyd (\d+) --addenda (\d+)", line)
+        check("R02 연혁본 헤더에 경과조치 확인·직후 MST", r.returncode == 0 and m is not None
+              and "MST" in r.stderr.split("직후 개정:")[-1].split("\n")[0], line or r.stderr[-300:])
+        if m:
+            a = run(["get", "--target", "eflaw", "--mst", m.group(1), "--efyd", m.group(2), "--addenda", m.group(3)],
+                    env=env)
+            check("R02 --addenda 8730 부칙 제3조(종전의 규정)", a.returncode == 0 and "종전의 규정을 적용한다" in a.stdout
+                  and len(a.stdout) < 3000 and "13454" not in a.stdout, f"{len(a.stdout)}자 " + a.stderr[-200:])
+        r = run(["get-asof", "--lid", "001671", "--date", "20150730", "--jo", "253의2", "--text"], env=env)
+        check("R02 신설 조문 없음 → 부칙 적용례 안내(exit 2)", r.returncode == 2 and "부칙" in r.stderr
+              and "적용례" in r.stderr and "--addenda" in r.stderr, r.stderr[-300:])
+        r = run(["get-asof", "--lid", "001671", "--date", "20150730", "--addenda", "13454"], env=env)
+        check("R02 get-asof --addenda 13454 부칙 제2조", r.returncode == 0 and "제253조의2의 개정규정은" in r.stdout
+              and "부칙 <제8730호" not in r.stdout, r.stdout[:200] + r.stderr[-200:])
+        r = run(["get-asof", "--lid", "001671", "--date", "20150730", "--jo", "249", "--addenda"], env=env)
+        check("R02 --addenda와 --jo 함께 → exit 2", r.returncode == 2 and "--addenda" in r.stderr)
+        r = run(["get-asof", "--target", "ordin", "--query", "가평군 옥외광고물", "--lid", "2019869",
+                 "--date", "20150101"], env=env)
+        check("R02 자치법규 연혁본 경과조치 안내", "경과조치 확인" in r.stderr and "get --target ordin --mst" in r.stderr,
+              r.stderr[-300:])
+        # LAW-06 --display 150(서버는 100건·100건 단위 쪽) — 요청을 100으로 낮춰 다음 쪽 안내가 맞다
+        r = run(["search", "--target", "licbyl", "--query", "*", "--display", "150", "--page", "2"], env=env)
+        head = (r.stdout.splitlines() or [""])[0]
+        check("LAW-06 --display 150 → 100건·다음 쪽 안내", r.returncode == 0 and "page 2, 100건 (다음 쪽: --page 3)" in head
+              and "상한은 100" in r.stderr, head)
+        # LAW-06 빈 쪽에서 다음 쪽 안내 없음
+        r = run(["search", "--target", "law", "--query", "전자금융", "--display", "4", "--page", "2"], env=env)
+        check("LAW-06 빈 쪽: 다음 쪽 안내 없음", r.returncode == 0 and "다음 쪽" not in r.stdout.splitlines()[0],
+              r.stdout[:200])
+        # LAW-07 편·장식 조문번호·한 블록 발췌
+        r = run(["get-asof", "--target", "admrul", "--query", "외국환거래규정", "--date", "20250801", "--jo", "7-14",
+                 "--text"], env=env)
+        check("LAW-07 외국환거래규정 제7-14조 발췌", r.returncode == 0 and "제7-14조(거주자의 외화자금차입)" in r.stdout
+              and "제7-15조(" not in r.stdout and "제7-14조의2(" not in r.stdout and len(r.stdout) < 20000,
+              f"{len(r.stdout)}자 " + r.stderr[-200:])
+        # LAW-08 영문본
+        r = run(["get", "--target", "law", "--id", "001248", "--lang", "EN", "--jo", "3", "--text"], env=env)
+        check("LAW-08 --lang EN → Article 3 영문 발췌·번역본 NOTE", r.returncode == 0 and "Article 3 (" in r.stdout
+              and "Article 4 (" not in r.stdout and "영문 번역본(참고용·법적 효력 없음)" in r.stderr, r.stderr[-200:])
+        r = run(["get", "--target", "eflaw", "--lm", "형법", "--lang", "EN", "--jo", "347", "--text"], env=env)
+        check("LAW-08 --lm 형법(elaw LM 불일치 → 법령ID 재조회)", r.returncode == 0 and "Article 347 (Fraud)" in r.stdout
+              and "CHAPTER" not in r.stdout, r.stderr[-200:])
+        # LAW-10 download 가짜 성공·트레이스백
+        with tempfile.TemporaryDirectory() as t:
+            r = run(["download", "--url", "/LSW/flDownload.do?flSeq=987654321987", "--filename", "nofile",
+                     "--out-dir", t], env=env)
+            check("LAW-10 없는 파일 → exit 3 FAILED·파일 없음", r.returncode == 3 and "FAILED" in r.stderr
+                  and "SAVED" not in r.stdout and os.listdir(t) == [], r.stdout + r.stderr[-200:])
+            r = run(["download", "--url", "https://www.law.go.kr/DRF/no_such_file_xyz.pdf", "--out-dir", t], env=env)
+            check("LAW-10 HTTP 404 → exit 3·트레이스백 없음", r.returncode == 3 and "Traceback" not in r.stderr
+                  and "HTTP 404" in r.stderr, r.stderr[-200:])
+            # LAW-11 api_reference 6-A 예시(관련법령명 검색) → 목록·download
+            x = os.path.join(t, "byl_search_licbyl.xml")
+            r = run(["search", "--target", "licbyl", "--query", "건축법", "--search", "2", "--display", "20",
+                     "--save-to", x], env=env)
+            d = run(["download", "--from-search-xml", x, "--limit", "5", "--out-dir", os.path.join(t, "o")], env=env)
+            check("LAW-11 licbyl 건축법 --search 2 → 목록·download 5건", r.returncode == 0
+                  and "totalCnt 0," not in r.stdout.splitlines()[0] and d.returncode == 0
+                  and d.stdout.count("SAVED") == 5, r.stdout[:120] + d.stderr[-200:])
+        # 기준일이 오늘 뒤 — 시행예정본 선택(전기통신금융사기피해환급법 제21503호, 시행 2026. 10. 1.)
+        if L._today() < "20261001":
+            r = run(["get-asof", "--lid", "011359", "--date", "20261015", "--jo", "1", "--text"], env=env)
+            check("get-asof 미래 기준일 → 시행예정본(MST 285053)·'시행예정본' 안내·구법 표기 안내 없음",
+                  r.returncode == 0 and "MST 285053" in r.stderr and "시행예정본" in r.stderr
+                  and "구법 표기" not in r.stderr, r.stderr[-300:])
         cowork(key, env)
     finally:
         shutil.rmtree(cache, ignore_errors=True)

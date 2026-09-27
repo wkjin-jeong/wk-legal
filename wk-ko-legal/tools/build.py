@@ -72,6 +72,20 @@ DRIFT_PATTERNS: list[tuple[str, str, str | None]] = [
     (r"초적○+ 구속영장", "영장심사 표두에 구속적부심사 부호 '초적'", None),
     (r"혐의없음 의견으로 (?:\(|송치|불송치|불기소)",
      "수사권 조정 전 결어 — 경찰 '불송치 결정'·검찰 '불기소결정'", r"보다 이 정형이 우선|쓰지 않는다"),
+    # 2.5.3 — P2 수정분의 재발 방지
+    (r"\(부칙 확인 권고\)", "경과조치는 기준일 뒤 개정의 부칙 — get-asof '경과조치 확인'·--addenda(ko-law-api 5.1)", None),
+    (r"현행본과 절대 혼용", "조문 문언이 현행과 같으면 통상 표기 가능 — get-asof --jo 대조(ko-law-api 5.4)", None),
+    (r"신구법 조회", "ko-law-api에 신구법 조회 기능은 없다 — get-asof 두 기준일 --jo 대비", None),
+    (r"별표시행일자.{0,20}(?:대조|비교)", "별표시행일자는 버전마다 모든 별표에 찍힌다 — 별표 개정 판별에 쓰지 않는다", r"아니다|찍힌"),
+    (r"ToolSearch\(`read_case find_citing`\)", "원격 판례 MCP 로딩 — 다섯 도구 이름 모두(판례-인용-정책 1.1)", None),
+    (r"수록 기준일 뒤", "최신성 기준일은 당일 포함 — 판례-인용-정책 1.1-3", None),
+    (r"\d{4}\. \d{1,2}\. \d{1,2}\. 시행 개정 외국환거래법|○○일자", "자문 예문의 실재하지 않는 시행일·일자 표기 — 자리표시로(자문 05 3.4)", None),
+    (r"1 2 3 4 5 … »|로그인 페이지로 (?:리다이렉트|바뀐)|chat\.lbox\.kr/api|documentType `precedent`\)로 추출",
+     "lbox 화면·API 낡은 서술 — 페이지네이션 « ‹ 번호 › », 비로그인은 본문 자리 로그인 문구, route-api, data-track-click", None),
+    (r"i < 2 && card\.parentElement|\|\| a\.parentElement\.parentElement;", "lbox 카드 폴백 2단계 — 카드는 앵커의 3단계 부모", None),
+    (r"bookId \+ '\|' \+ tocId \+ '\|' \+ nodeId", "PDF형 실무서 카드 dedup 누락 — docId·page 포함 키로", None),
+    (r"빅케이스Plus 시작하기|무제한 열람", "bigcase 페이월 증상 낡음 — '회원에게만 공개되는 판례'", None),
+    (r"\['1', N\]", "lbox 옛 페이지 이동 JS(번호 버튼) — 6쪽 이후 실패. '다음으로 이동' 기준 JS로(extraction.md 1-3·1-4)", None),
 ]
 # SKILL.md 전용: 버전마다 바뀌는 행정규칙일련번호(13자리) 고정 예시 금지 — 자리표시(<행정규칙일련번호>)로
 SKILL_ONLY_PATTERNS: list[tuple[str, str, str | None]] = [
