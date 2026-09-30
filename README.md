@@ -6,7 +6,7 @@
 
 | 플러그인 | 설명 |
 |---|---|
-| [`wk-ko-legal`](./wk-ko-legal) | 한국 변호사 법률 사무 스킬 번들 (민사·행정·형사 서면·자문의견서 작성, 법령 API 조회, lbox·bigcase 판례 검색, lbox 주석서 검색 — 8 skills) |
+| [`wk-ko-legal`](./wk-ko-legal) | 한국 변호사 법률 사무 스킬 번들 (민사·행정·형사 서면·자문의견서 작성, 제출 전 적대적 검증, 법령 API 조회, lbox·bigcase 판례 검색, lbox 주석서 검색 — 9 skills) |
 | [`wk-ko-evidence`](./wk-ko-evidence) | (실험) 한국 소송 증거·기록 분석 — `ko-evidence-analysis` 1개. 유용성 검증 뒤 `wk-ko-legal` 편입 검토 |
 
 ## 설치

@@ -20,5 +20,6 @@
   {"query": "변호인의견서 초안 써줘. 수사단계에서 불송치 의견 낼 거야", "should_trigger": false, "expected": "ko-criminal-drafting"},
   {"query": "민법 제449조 조문 본문 찾아줘", "should_trigger": false, "expected": "ko-law-api"},
   {"query": "금융회사 제재처분 취소소송 소장 써줘. 제재 통지서 첨부할게", "should_trigger": false, "expected": "ko-administrative-drafting"},
-  {"query": "대여금 소송에서 상대방 준비서면 반박할 쟁점 정리해서 우리 측 준비서면 초안 써줘", "should_trigger": false, "expected": "ko-civil-litigation-drafting"}
+  {"query": "대여금 소송에서 상대방 준비서면 반박할 쟁점 정리해서 우리 측 준비서면 초안 써줘", "should_trigger": false, "expected": "ko-civil-litigation-drafting"},
+  {"query": "은행에 보낼 자문의견서 초안, 발송 전에 레드팀 관점에서 비판해줘", "should_trigger": false, "expected": "ko-adversarial-review", "note": "고쳐 쓰지 않는 적대적 검증 — ko-adversarial-review 세트 양성 행과 같은 질의"}
 ]

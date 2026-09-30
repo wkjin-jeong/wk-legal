@@ -25,5 +25,6 @@
   {"query": "채권압류 및 추심명령 요건이 뭐야? 서면 말고 간단히 설명만 해줘", "should_trigger": false, "expected": ["none", "ko-law-api"], "note": "서면 없는 요건 질문"},
   {"query": "형사 공판기일변경신청서 써줘. 다음 공판기일에 증인 일정이 겹쳐", "should_trigger": false, "expected": "ko-criminal-drafting", "note": "형사사건의 절차 신청 — 공통 기준안 7"},
   {"query": "과징금 취소소송 진행 중인데 행정심판기록 제출명령 신청서 써줘", "should_trigger": false, "expected": "ko-administrative-drafting", "note": "행정소송 중 절차 신청 — 공통 기준안 7. ko-administrative-drafting 세트 양성 행과 같은 질의"},
-  {"query": "영업정지 처분 취소소송 진행 중인데 처분청에 문서송부촉탁신청서 써줘", "should_trigger": false, "expected": "ko-administrative-drafting", "note": "행정소송 중 절차 신청은 행정 스킬 — 공통 기준안 7(CIV-26)"}
+  {"query": "영업정지 처분 취소소송 진행 중인데 처분청에 문서송부촉탁신청서 써줘", "should_trigger": false, "expected": "ko-administrative-drafting", "note": "행정소송 중 절차 신청은 행정 스킬 — 공통 기준안 7(CIV-26)"},
+  {"query": "이 준비서면 제출 전에 상대방 대리인 입장에서 허점 좀 찾아줘. 고치지는 말고 문제만 짚어줘", "should_trigger": false, "expected": "ko-adversarial-review", "note": "고쳐 쓰지 않는 적대적 검증 — ko-adversarial-review 세트 양성 행과 같은 질의"}
 ]

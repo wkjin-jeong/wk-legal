@@ -20,5 +20,6 @@
   {"query": "내 lbox 행정사건 다음 변론기일 언제인지 진행상황 갱신해줘", "should_trigger": false, "expected": "none", "note": "등록 사건 관리 — 2.2.0 lbox-case-progress 제거, 담당 스킬 없음"},
   {"query": "집행정지 요건이 뭔지 간단히 알려줘. 서면은 필요 없어", "should_trigger": false, "expected": ["none", "ko-law-api"], "note": "서면 없는 요건 질문"},
   {"query": "○○구청장의 영업정지 취소소송 계속 중인데, 관할 경찰서에 단속 경위를 묻는 사실조회신청서 써줘", "should_trigger": true, "note": "행정소송 중 절차 신청 — 공통 기준안 7(ADM-12)"},
-  {"query": "과징금 부과처분 취소 사건 변론기일이 대리인의 다른 재판과 겹쳐서 기일변경신청서 작성해줘", "should_trigger": true, "note": "행정소송 중 절차 신청 — 공통 기준안 7(ADM-12)"}
+  {"query": "과징금 부과처분 취소 사건 변론기일이 대리인의 다른 재판과 겹쳐서 기일변경신청서 작성해줘", "should_trigger": true, "note": "행정소송 중 절차 신청 — 공통 기준안 7(ADM-12)"},
+  {"query": "행정심판 청구서 제출 전 최종 점검이야. 판례·조문·증거 인용 팩트체크해줘", "should_trigger": false, "expected": "ko-adversarial-review", "note": "고쳐 쓰지 않는 인용 검증 — ko-adversarial-review 세트 양성 행과 같은 질의"}
 ]

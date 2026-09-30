@@ -1,0 +1,19 @@
+[
+  {"query": "이 준비서면 제출 전에 상대방 대리인 입장에서 허점 좀 찾아줘. 고치지는 말고 문제만 짚어줘", "should_trigger": true},
+  {"query": "첨부한 형사 항소이유서, 항소심 재판부가 어떻게 볼지 적대적으로 검증해줘", "should_trigger": true},
+  {"query": "소장 초안에 인용한 판례들이 원문이랑 맞는지 전부 인용 검증해줘", "should_trigger": true},
+  {"query": "은행에 보낼 자문의견서 초안, 발송 전에 레드팀 관점에서 비판해줘", "should_trigger": true},
+  {"query": "방금 쓴 답변서를 상대방이라면 어떻게 공격할지 검증 보고서로 정리해줘", "should_trigger": true},
+  {"query": "행정심판 청구서 제출 전 최종 점검이야. 판례·조문·증거 인용 팩트체크해줘", "should_trigger": true},
+  {"query": "변호인의견서에 인용한 판례가 나중에 뒤집히거나 파기된 건 아닌지, 반대의견을 판시로 쓴 건 없는지 확인해줘", "should_trigger": true},
+  {"query": "준비서면 허점을 심각도 순으로 보고서로 만들어줘. 고치는 건 내가 할게", "should_trigger": true},
+
+  {"query": "이 준비서면 검토해서 문장이랑 논리까지 고쳐줘", "should_trigger": false, "expected": "ko-civil-litigation-drafting", "note": "고쳐 쓰는 검토는 drafting 모드 B"},
+  {"query": "형사 항소이유서 초안 검토하고 수정본까지 만들어줘", "should_trigger": false, "expected": "ko-criminal-drafting", "note": "고쳐 쓰는 검토는 drafting 모드 B"},
+  {"query": "영업정지 취소소송 소장 초안 보완해서 다시 써줘", "should_trigger": false, "expected": "ko-administrative-drafting", "note": "고쳐 쓰는 검토는 drafting 모드 B"},
+  {"query": "자문의견서 초안 문장 다듬고 빠진 쟁점 보완해줘", "should_trigger": false, "expected": "ko-legal-advisory-drafting", "note": "고쳐 쓰는 검토는 drafting 모드 B"},
+  {"query": "상대방이 낸 준비서면의 허점을 찾아서 우리 측 반박 준비서면을 써줘", "should_trigger": false, "expected": "ko-civil-litigation-drafting", "note": "상대방 서면 반박 서면 작성은 drafting 모드 C"},
+  {"query": "분묘기지권 시효취득 대법원 판례 lbox에서 검색해서 정리해줘", "should_trigger": false, "expected": "lbox-case-search"},
+  {"query": "민법 제428조의2 조문 본문 찾아줘", "should_trigger": false, "expected": "ko-law-api"},
+  {"query": "준비서면에서 청구 변경은 어떤 방식으로 해야 하는지 간단히 설명만 해줘", "should_trigger": false, "expected": ["none", "ko-law-api"], "note": "서면 없는 절차 질문"}
+]
