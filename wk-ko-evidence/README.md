@@ -24,7 +24,9 @@
 
 Cowork 등 파일 업로드로 설치할 때는 저장소 루트에서 `python3 wk-ko-legal/tools/build.py --plugin wk-ko-evidence`를 실행해 만든 `wk-ko-evidence.plugin`을 올립니다.
 
+<!-- package:skip-start -->
 ## 개발
 
 - 검증·패키징: `python3 wk-ko-legal/tools/build.py --plugin wk-ko-evidence [--no-zip]`
 - 스크립트 회귀 검사(합성 기록): `python3 wk-ko-evidence/tools/evidence_regress.py`
+<!-- package:skip-end -->

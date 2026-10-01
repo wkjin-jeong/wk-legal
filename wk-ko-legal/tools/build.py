@@ -19,9 +19,13 @@
   8. 스킬 수 표기 — plugin.json·마켓플레이스의 자기 항목·플러그인 README·저장소 README에서 자기 이름이 든 줄의
      '(N skills)'·'스킬 N종'이 실제 스킬 수와 같은지
   9. 마켓플레이스 등재 — 저장소 marketplace.json에 자기 항목이 있고 source가 이 폴더인지
+  10. 배포 문서 — 저장소 루트 LICENSE.md 실존(패키지에 넣는다), 플러그인 README의 패키지 제외 표지
+     (<!-- package:skip-start --> … <!-- package:skip-end -->) 짝 맞음
 패키징:
   evals/, __pycache__, .DS_Store, .env, *.pyc, *.bak*, 최상위 tools/·CHANGELOG.md(개발·이력용 — 런타임 불필요) 제외 후
-  저장소 부모 폴더에 <name>.plugin (zip) 생성.
+  저장소 부모 폴더에 <name>.plugin (zip) 생성. 배포는 이 패키지 파일로 한다(2.6.1부터):
+  - 저장소 루트 LICENSE.md를 패키지 최상위에 넣는다.
+  - 최상위 README.md는 패키지 제외 표지 사이(개발·빌드 안내)를 빼고, LICENSE 링크를 패키지 안 경로로 바꿔 넣는다.
 
 사용: python3 tools/build.py [--no-zip] [--plugin <폴더>]
 종료코드: 0 정상 / 1 검증 실패
@@ -46,7 +50,15 @@ OLD_NAMES = ("korean-civil-litigation-drafting", "korean-legal-advisory-drafting
 ALLOWED_OLD = {"law_api.py", ".env.example"}  # 런타임 호환용 구명칭 허용 파일
 EXCLUDE_DIR = {"evals", "__pycache__"}
 EXCLUDE_FILE = {".DS_Store", ".env", ".law_api.env"}  # 실제 인증키 파일 — 배포 zip에 포함 금지
-EXCLUDE_TOP = {"tools", "CHANGELOG.md"}  # 플러그인 최상위의 개발·이력 파일 — zip에서만 제외(git 설치본에는 남는다)
+EXCLUDE_TOP = {"tools", "CHANGELOG.md"}  # 플러그인 최상위의 개발·이력 파일 — zip에서만 제외(저장소에는 남는다)
+LICENSE = ROOT.parent / "LICENSE.md"  # 저장소 루트의 라이선스 — 패키지 최상위에 넣는다
+PKG_SKIP_START, PKG_SKIP_END = "<!-- package:skip-start -->", "<!-- package:skip-end -->"
+PKG_SKIP_RE = re.compile(re.escape(PKG_SKIP_START) + r".*?" + re.escape(PKG_SKIP_END) + r"\n?", re.S)
+
+
+def packaged_readme(text: str) -> str:
+    """패키지에 넣을 README: 개발·빌드 안내(제외 표지 사이)를 빼고 LICENSE 링크를 패키지 안 경로로."""
+    return PKG_SKIP_RE.sub("", text).replace("(../LICENSE.md)", "(LICENSE.md)").rstrip("\n") + "\n"
 # shared/ 참조 패턴: "shared/<파일>.md" 또는 "../../shared/<파일>.md" (코드펜스·따옴표 무관)
 SHARED_REF = re.compile(r"(?:\.\./\.\./)?shared/([\w가-힣.\-]+\.md)")
 # 드리프트 린트: (정규식, 사유, 예외 — 같은 줄에 이 정규식이 있으면 허용(금지 규정을 설명하는 줄 등))
@@ -125,6 +137,8 @@ DRIFT_PATTERNS: list[tuple[str, str, str | None]] = [
     # 2.5.6 — 원격 판례 MCP 재배포(2026-09-27) 뒤 우회 문구의 재발 방지
     (r"서버 수정 배포 전까지", "원격 MCP 결함 우회 문구 — 2026-09-27 배포로 해소(판례-인용-정책 1.2-3·1.2-4)", None),
     (r"원격 MCP는 원본·URL을 주지 않", "원격 read_case의 source_url 미제공 문구 — 2026-09-27 배포로 해소(판례-인용-정책 3.)", None),
+    # 2.6.1 — 배포를 패키지 파일로 전환: 저장소 주소 기준의 낡은 라이선스·설치 안내
+    (r"주소(?:\(URL\))?를 알게 된 사람|저장소 루트의 \[LICENSE|/plugin marketplace add", "낡은 배포 안내 — 패키지 파일 배포·LICENSE 제2조(제공받은 본인만)", None),
 ]
 # 개별 스킬(skills/ 아래 SKILL.md·references·evals) 전용: 위키는 shared/LLM-wiki-연동-정책.md로만 참조한다 —
 # 위키 자산·경로·절 번호·코퍼스 근거를 스킬에 적지 않고, 지식베이스 부재는 알리지 않는다(연동 정책 1.)
@@ -324,6 +338,17 @@ def main() -> None:
                 if int(a or b) != n_sk:
                     errors.append(f"marketplace.json: '{name}' 스킬 수 표기 {a or b} ≠ 실제 {n_sk}")
 
+    # 10) 배포 문서 — 패키지에 넣을 LICENSE와 README 제외 표지
+    if not LICENSE.is_file():
+        errors.append("저장소 루트 LICENSE.md 없음 — 패키지에 넣을 라이선스가 없다")
+    readme = ROOT / "README.md"
+    if readme.is_file():
+        rt = readme.read_text(encoding="utf-8")
+        if rt.count(PKG_SKIP_START) != rt.count(PKG_SKIP_END):
+            errors.append("README.md: 패키지 제외 표지(package:skip-start/end) 짝이 맞지 않음")
+        elif PKG_SKIP_START in packaged_readme(rt) or PKG_SKIP_END in packaged_readme(rt):
+            errors.append("README.md: 패키지 제외 표지가 겹치거나 순서가 바뀜")
+
     if errors:
         fail(errors)
     print(f"OK 검증 통과 — 스킬 {len(skills)}개: {', '.join(s.name for s in skills)}")
@@ -340,7 +365,11 @@ def main() -> None:
             if (any(d in rel.parts for d in EXCLUDE_DIR) or f.name in EXCLUDE_FILE or rel.parts[0] in EXCLUDE_TOP
                     or f.suffix == ".pyc" or ".bak" in f.name):
                 continue
+            if rel.parts == ("README.md",):
+                z.writestr("README.md", packaged_readme(f.read_text(encoding="utf-8")))
+                continue
             z.write(f, str(rel))
+        z.write(LICENSE, "LICENSE.md")
         count = len(z.namelist())
     print(f"OK 패키징 완료 — {out} ({count}개 파일)")
 
