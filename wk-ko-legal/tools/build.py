@@ -68,6 +68,8 @@ DRIFT_PATTERNS: list[tuple[str, str, str | None]] = [
     (r"mcp__Claude_in_Chrome__", "낡은 Chrome 도구명 — 호스트 중립 표기로", None),
     (r"(?<![\w./])python (?:scripts/|\S*law_api\.py)", "'python' 실행 — python3로(Cowork VM에 python 없음)", None),
     (r"slice\(0,\s*5\)", "javascript_tool 분할 반환 — extraction.md 0장 반환 규약으로", None),
+    # 2.7.0 — hwpx 출력: 사무소명·담당변호사 등 로컬 프로필 값은 공개 문서에 적지 않는다(자리표시 ○○만)
+    (r"법무법인 (?!○|자칭|귀중)[가-힣]{2,}", "실제 사무소명 — 공개 문서는 자리표시 '법무법인 ○○'(사무소 값은 로컬 hwpx 프로필)", None),
     # 2.5.2 — 2026-09-27 기능 검증 P1 수정분의 재발 방지
     (r"target=law에서 가장 권장|`get --target law`는 이를 자동 처리|`get --target law`에서 이를 감지하면",
      "get --target law는 --promulgated가 없으면 언제나 eflaw로 대체한다(공포·시행 역전 — ko-law-api 5장)", None),
@@ -338,7 +340,27 @@ def main() -> None:
                 if int(a or b) != n_sk:
                     errors.append(f"marketplace.json: '{name}' 스킬 수 표기 {a or b} ≠ 실제 {n_sk}")
 
-    # 10) 배포 문서 — 패키지에 넣을 LICENSE와 README 제외 표지
+    # 10) hwpx 기본양식·기본프로필 — 공개 패키지에 사무소 식별 정보가 들어가지 않게(표지 외 글·작성자·서명자 금지)
+    hwpx_dir = ROOT / "shared" / "hwpx"
+    if hwpx_dir.is_dir():
+        for tpl in sorted(hwpx_dir.glob("*.hwpx")):
+            with zipfile.ZipFile(tpl) as zt:
+                secs = "".join(zt.read(n).decode("utf-8") for n in zt.namelist() if re.match(r"Contents/section\d+\.xml", n))
+                texts = re.sub(r"\{\{\S+?\}\}", "", "".join(re.findall(r"<hp:t>([^<]*)", secs)))
+                if re.sub(r"[\s/·.,]", "", texts):
+                    errors.append(f"{tpl.relative_to(ROOT)}: 표지 외 글 — {texts.strip()[:40]!r}(양식은 표지만 남긴다)")
+                hpf = zt.read("Contents/content.hpf").decode("utf-8")
+                if re.search(r'name="(?:creator|lastsaveby)" content="text">[^<]', hpf):
+                    errors.append(f"{tpl.relative_to(ROOT)}: 작성자 메타데이터 남음(creator·lastsaveby)")
+                if any(n.startswith("BinData/") for n in zt.namelist()):
+                    errors.append(f"{tpl.relative_to(ROOT)}: 그림(BinData) 포함 — 기본양식에는 로고·배경을 넣지 않는다")
+        dp = hwpx_dir / "기본프로필.json"
+        if dp.is_file():
+            sg = json.loads(dp.read_text(encoding="utf-8")).get("signers", {})
+            if sg.get("firm") or sg.get("lawyers"):
+                errors.append("shared/hwpx/기본프로필.json: signers에 사무소·변호사 값 — 기본값은 비워 둔다(로컬 프로필에만)")
+
+    # 11) 배포 문서 — 패키지에 넣을 LICENSE와 README 제외 표지
     if not LICENSE.is_file():
         errors.append("저장소 루트 LICENSE.md 없음 — 패키지에 넣을 라이선스가 없다")
     readme = ROOT / "README.md"

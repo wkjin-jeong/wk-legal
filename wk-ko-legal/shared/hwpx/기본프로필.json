@@ -1,0 +1,30 @@
+{
+  "name": "기본",
+  "templates": { "기본": "기본양식.hwpx" },
+  "side_map": {
+    "원고측": ["원고", "반소피고", "채권자", "신청인", "청구인", "항고인", "고소인", "고발인", "진정인"],
+    "피고측": ["피고", "반소원고", "채무자", "피신청인", "피청구인", "상대방", "피고인", "피의자", "피고소인"]
+  },
+  "signers": { "firm": "", "lawyers": [], "lawyer_line": "담당변호사 {name}" },
+  "styles": {
+    "본문": "본문", "바탕글": "바탕글", "개요": ["개요 1", "개요 2", "개요 3", "개요 4", "개요 5", "개요 6"],
+    "표": "표(휴먼고딕)", "중간제목": "중간제목", "문서제목": "문서제목"
+  },
+  "heading": { "keep_with_next": true },
+  "signature": { "keep_together": true },
+  "body": { "lead_spaces": 2, "emphasis": ["bold"], "quote_indent": 2000 },
+  "table": {
+    "outer": "0.12 mm", "inner": "0.12 mm", "header_rule": "0.12 mm", "total_rule": "0.12 mm",
+    "out_margin": 141, "in_margin": 510, "cell_margin": 510,
+    "header_bold": true, "total_bold_values": false,
+    "font_pt_by_cols": [[4, 12], [6, 11], [99, 10]]
+  },
+  "picture": {
+    "border_hwpunit": 0, "caption_side": "BOTTOM", "caption_native": false, "caption_align": "CENTER",
+    "caption_format": "{}", "max_width_ratio": 0.9, "max_height_ratio": 0.6
+  },
+  "lists": {
+    "line_spacing": 0, "lead_spaces": 4,
+    "sections": ["증명방법", "입증방법", "소명방법", "첨부서류", "첨부자료", "청구취지", "신청취지", "항소취지", "항고취지", "당사자", "당사자의표시"]
+  }
+}

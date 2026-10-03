@@ -21,6 +21,7 @@
 - ko-administrative-drafting은 기준 시점 법령(처분시법, 제재처분은 위반행위시법 — SKILL.md 4.2), ko-criminal-drafting은 행위시법을 ko-law-api `get-asof`로 확인한다. 형사 양형기준은 로컬 구조화 파일(json/md, 사용자 제공 시) 우선, 없으면 양형위원회 공식 웹사이트 확인.
 - drafting 4종의 문체·문형 기본값은 한국 법조 서면의 일반 관행이다. 로컬 실무지식베이스(기본 `~/LLM-wiki`, Cowork VM은 마운트된 `~/mnt/LLM-wiki`, `WK_LEGAL_WIKI_ROOT`로 재정의 — 지정하면 그 경로만 본다)가 있으면 `shared/LLM-wiki-연동-정책.md`에 따라서만 병용하고, 없으면 연동 단계는 조용히 생략된다.
 - 판례는 판례DB를 먼저 쓴다(`shared/판례-인용-정책.md` 1.): 원격 판례 MCP(llm-wiki 커넥터)와 로컬 판례DB(`{지식베이스 루트}/판례DB/_색인.sqlite` — `shared/case_db.py`로 읽기 전용 조회) 중 수록 범위가 최신인 쪽. 판례DB 원문은 원본 대조 없이 인용하고, 인용 형식은 따옴표 없는 원문 전재 + 괄호 출처가 기본(큰따옴표 직접 인용도 가능).
+- 한글(hwpx) 출력: 민사 서면은 사용자가 요청하면 확정된 md(제출본)에서 hwpx를 만든다(`shared/hwpx-출력-정책.md`, 변환기 `shared/hwpx/render.py` — 표준 라이브러리만). 사무소 양식과 서식(표 선·그림 캡션·강조·서명자)은 작업 폴더 최상위의 `.wk-legal/hwpx/profile.json`(로컬 프로필)에 두고, 없으면 기본양식(휴먼 계열 글꼴)을 쓴다. 양식에 표지를 넣는 `render.py mark`로 사무소 양식을 프로필로 만든다.
 - lbox 2종·bigcase: Claude in Chrome + 해당 사이트(lbox.kr / bigcase.ai) 로그인 전제. 서면 작성에서는 판례DB로 부족한 쟁점·핵심 쟁점의 핵심 판례 검색·최신성·인용 수·사건번호 URL 직행 검증에만 쓴다.
 
 ## 라이선스
@@ -30,7 +31,7 @@
 <!-- package:skip-start -->
 ## 개발·빌드 (저장소 전용 — 패키지에는 들어가지 않는다)
 
-- 런타임 스크립트 회귀 검사: `python3 tools/law_api_regress.py [--live]`(ko-law-api, `--live`는 인증키 필요), `python3 tools/case_db_regress.py`(로컬 판례DB 필요).
+- 런타임 스크립트 회귀 검사: `python3 tools/law_api_regress.py [--live]`(ko-law-api, `--live`는 인증키 필요), `python3 tools/case_db_regress.py`(로컬 판례DB 필요), `python3 tools/hwpx_regress.py [--profile DIR | --md 초안.md…]`(hwpx 변환기 — 한글에서의 쪽 나눔은 검증하지 못하므로 릴리스 전 한글로 열어 본다).
 - 스킬 description 트리거 회귀: `python3 tools/trigger_eval.py --check`(세트 형식) → `--limit 3`(사전 점검) → 전량 실측(모델 호출 요금 발생). 결과는 임시 폴더, `--rescore DIR`로 재채점. 평가 세트는 각 스킬 `evals/trigger-eval.json`(음성 행에 기대 목적지 `expected`).
 - evals/·tools/·CHANGELOG.md는 개발·이력용이다 — `tools/build.py`가 만드는 .plugin(zip)에서는 빠지지만, 저장소(git)에는 들어 있다(런타임에 적재되지는 않는다).
 - `tools/build.py`는 검증(구조·참조·드리프트 린트·절 포인터 실존·스킬 수 표기·마켓플레이스 등재) 뒤 패키징한다. 같은 저장소의 다른 플러그인(실험 플러그인 `wk-ko-evidence`)은 `--plugin <폴더>`로 같은 검증·패키징을 한다. 드리프트 린트는 개정 뒤 일부 파일에 남기 쉬운 낡은 표현(lbox 단독 확인, '. 자', 옛 Chrome 도구명, `python` 실행, JS 분할 반환, 행정규칙일련번호 고정 예시, 크로스 폴백 '0건이면 lbox', 보전·집행의 민사소송 실무제요 지정, 가정 표지 '가사', 별칭 괄호 안 마침표, 금액 한글 병기, 형사 증거 좌표 '○번'·'○면', 부분 날짜 '하나만', 서면 법령명 낫표, 조문 '§', 패키지 필드의 text_status 누락, 실제 사건 예문 재유입 등)을 막는다. 개별 스킬(SKILL.md·references·evals)에는 위키 직접 참조·구조 노출·내부 용어·지식베이스 부재 고지를 막는 `SKILL_TREE_PATTERNS`를, 연동 정책 밖의 공용 문서에는 위키 문체 근거 표지를 막는 `NON_POLICY_PATTERNS`를 적용하고, SKILL.md가 컴팩션 재첨부 한도(약 2만 자)를 넘으면 경고한다 — 새 전수 grep 대상이 생기면 `DRIFT_PATTERNS`에 한 줄 추가한다.
