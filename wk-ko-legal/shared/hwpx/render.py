@@ -40,7 +40,8 @@ OUTLINE_RE = [                        # 개요 1~6: 1. / 가. / 1) / 가) / (1) 
 HANGUL_SEQ = '가나다라마바사아자차카타파하'
 PARTY_LABELS = sorted("""사건 사건명 원고 피고 원고들 피고들 원고겸반소피고 피고겸반소원고 반소원고 반소피고 채권자 채무자 제3채무자
 신청인 피신청인 항고인 재항고인 상대방 청구인 피청구인 항소인 피항소인 상고인 피상고인 피고인 피의자 고소인 피고소인
-고발인 피고발인 진정인 피진정인 참가인 보조참가인 독립당사자참가인 소송수계인 원고승계참가인 신청외""".split(), key=len, reverse=True)
+고발인 피고발인 진정인 피진정인 참가인 보조참가인 독립당사자참가인 소송수계인 원고승계참가인 신청외
+죄명 제출인 수신 처분청 청구외""".split(), key=len, reverse=True)
 DATE_RE = re.compile(r'^(\d{4})\.\s*(\d{1,2})?\.?\s*(\d{1,2})?\.?$')
 _ids = itertools.count(1900000001)
 
@@ -202,6 +203,10 @@ def parse_md(text, prof):
         if raw.lstrip().startswith('>'):
             raise RenderError('표제 뒤에 작성 메모(> …) — 메모·검토 논평을 뺀 제출본 md를 만들어 변환한다(hwpx-출력-정책 2.)')
         u = re.sub(r'\*\*|__', '', unwrap(raw))
+        mb = re.match(r'^\[\s*([가-힣 ]{2,10}?)\s*\]\s*(\S.*)$', u) or \
+            (re.match(r'^([가-힣][가-힣 ]{3,12}?)\s*:\s*(\S.*)$', u) if not re.match(r'^\s{3,}', raw) else None)
+        if mb and len(squeeze(mb.group(1))) >= (2 if u.startswith('[') else 5):
+            doc['parties'].append([squeeze(mb.group(1)), [mb.group(2).strip()]]); i += 1; continue   # [ 사건명 ]·처분의 표시: …
         p = party_line(u)
         if p:
             doc['parties'].append([p[0], [p[1]]]); i += 1; continue
@@ -212,20 +217,31 @@ def parse_md(text, prof):
             doc['parties'][-1][1].append(u.strip()); i += 1; continue   # 주소·대표자 등 이음 줄
         break
     # 꼬리(날짜·서명·법원·별지) 찾기: 마지막 '…귀중' 줄과 그 앞 날짜 줄
+    is_date = lambda l: bool(re.fullmatch(r'\d{4}\.\s*\d{0,2}\.?\s*\d{0,2}\.?', unwrap(l)))
     court_i = None
     for j in range(n - 1, i - 1, -1):
-        if re.search(r'귀\s*중\s*(\*\*)?\s*$', lines[j]):
+        if re.search(r'귀\s*[중하](\s*\([^)]*\))?\s*(\*\*)?\s*$', lines[j]):        # '…귀중', 수사기관 '…귀하'
             court_i = j; break
     date_i = None
     if court_i is not None:
         for j in range(court_i - 1, i - 1, -1):
-            if DATE_RE.match(squeeze(unwrap(lines[j])).replace('.', '. ').replace('  ', ' ').strip()) or \
-               re.fullmatch(r'\d{4}\.\s*\d{0,2}\.?\s*\d{0,2}\.?', unwrap(lines[j])):
+            if is_date(lines[j]):
                 date_i = j; break
+    else:   # 수신처 줄이 없는 서면(의견제출서·이의신청서 — 수신은 머리에): 끝부분 날짜 줄 뒤를 서명으로 본다
+        tail = [j for j in range(n - 1, i - 1, -1) if lines[j].strip()][:8]
+        date_i = next((j for j in tail if is_date(lines[j])), None)
     end_body = date_i if date_i is not None else (court_i if court_i is not None else n)
+    doc['trailer'] = []
     if date_i is not None:
         doc['date'] = unwrap(lines[date_i])
-        doc['signature'] = [unwrap(l) for l in lines[date_i + 1:court_i] if l.strip()]
+        sig = [l for l in lines[date_i + 1:court_i if court_i is not None else n] if l.strip()]
+        if court_i is None:     # 수신처가 없으면 서명다운 짧은 줄까지만 서명 — 그 뒤(안내문 등)는 서명 다음 본문
+            k = 0
+            while k < len(sig) and len(unwrap(sig[k])) <= 40 and not sig[k].lstrip().startswith(('>', '|', '#')) \
+                    and not re.search(r'[다요]\.\s*$', sig[k]):
+                k += 1
+            sig, doc['trailer'] = sig[:k], sig[k:]
+        doc['signature'] = [unwrap(l) for l in sig]
     if court_i is not None:
         doc['court'] = unwrap(lines[court_i])
         rest = lines[court_i + 1:]
@@ -248,10 +264,11 @@ def parse_md(text, prof):
                 j += 1
             if j < len(body_lines) and squeeze(unwrap(body_lines[j])) == '다음':
                 doc['has_da_eum'] = True; j += 1
-    if court_i is None or date_i is None:
-        doc['warnings'].append('날짜·법원 줄을 찾지 못함 — 서면 전문인지 확인(양식의 서명·법원 자리는 비운다)')
+    if date_i is None:
+        doc['warnings'].append('날짜 줄을 찾지 못함 — 서면 전문인지 확인(양식의 서명·수신처 자리는 비운다)')
     doc['body'] = blocks(body_lines[j:], list_secs, doc['warnings'])
     doc['annex_blocks'] = blocks(doc['annex'][1:], list_secs, doc['warnings']) if doc['annex'] else []
+    doc['trailer_blocks'] = blocks(doc['trailer'], list_secs, doc['warnings']) if doc['trailer'] else []
     doc['annex_title'] = unwrap(doc['annex'][0]) if doc['annex'] else ''
     return doc
 
@@ -795,6 +812,8 @@ class Renderer:
             t = escape(lab[0]) + tabs[0] + tabs[1] + escape(lab[1]) + tabs[2]
         elif len(tabs) >= 3 and len(lab) == 3:
             t = escape(lab[0]) + tabs[0] + escape(lab[1]) + tabs[1] + escape(lab[2]) + tabs[2]
+        elif len(tabs) >= 3 and len(lab) == 4:
+            t = escape(lab[0]) + tabs[0] + escape(lab[1:3]) + tabs[1] + escape(lab[3]) + tabs[2]
         elif tabs:
             t = escape(lab) + tabs[-1]
         else:
@@ -808,7 +827,16 @@ class Renderer:
         out, lawyers_md = [], []
         agent = firm = None
         for line in sig:
-            t = line.strip()
+            t = re.sub(r'\s*\(\s*인\s*\)\s*$', '', line.strip())          # '(인)' 날인 표시
+            m = re.match(r'^(.*?\S)\s+((?:법무법인|법률사무소|합동법률사무소|법무조합)\s*\S+\s+)?(?:담당)?변호사\s+(\S.*)$', t)
+            if m and not re.match(r'^(담당)?변호사', t) and not re.search(r'법무법인|법률사무소|합동법률|법무조합', m.group(1)):
+                agent = agent or m.group(1)                                 # '피의자의 변호인 변호사 ○○○' 한 줄 서명
+                if m.group(2):
+                    firm = m.group(2).strip()
+                elif sp.get('firm'):
+                    firm = firm or '법무법인 ○○'                             # 프로필 사무소로 채울 자리
+                lawyers_md.append(m.group(3).strip())
+                continue
             if re.match(r'^(담당)?변호사\s', t):
                 lawyers_md.append(re.sub(r'^(담당)?변호사\s+', '', t).strip())
             elif re.search(r'법무법인|법률사무소|합동법률|법무조합', t):
@@ -904,6 +932,8 @@ class Renderer:
                     moved_ctrl += [c for c in outer_elems(r, 'hp:ctrl') if re.match(r'<hp:ctrl>\s*<hp:(?:header|footer) ', c)]
                 continue
             out += fill
+        if doc.get('trailer_blocks'):
+            out += self.render_blocks(doc['trailer_blocks'], area='trailer')
         if doc.get('annex_blocks') or doc.get('annex_title'):
             out += self.render_annex(doc)
         if moved_ctrl:              # 지운 표지 문단의 머리말·꼬리말은 첫 문단으로 옮긴다
@@ -960,15 +990,20 @@ def normalize_title(t):
 
 
 def detect_side(doc, prof):
+    labs = [squeeze(re.sub(r'\(.*?\)', '', lab)) for lab, _ in doc.get('parties', [])]
+    if any(l in ('피의자', '피고인') for l in labs) and not any(l in ('고소인', '고발인', '진정인') for l in labs):
+        side = next((sd for sd, ls in prof['side_map'].items() if '피고인' in ls), None)
+        if side:
+            return side                                  # 형사 변호(구속적부심·보석 '청구인' 포함)
     texts = [doc.get('opening') or ''] + doc.get('signature', [])
     for t in texts:
-        m = re.search(r'([가-힣]+?)(?:들)?(?:\s*[가-힣]+)?의?\s*(?:소송)?대리인', t)
+        m = re.search(r'([가-힣]+?)(?:들)?(?:\s*[가-힣]+)?의?\s*(?:소송|고소)?(?:대리인|변호인)', t)
         if not m:
             continue
         who = squeeze(t[:m.end()])
         for side, labels in prof['side_map'].items():
             for lab in sorted(labels, key=len, reverse=True):
-                if re.match(rf'^(위\S*에관하여)?{lab}(들)?(\S*)?의?(소송)?대리인', re.sub(r'^위사건에관하여', '', who)):
+                if re.match(rf'^(위)?{lab}(들)?(\S*)?의?(소송|고소)?(대리인|변호인)', re.sub(r'^위사건에관하여', '', who)):
                     return side
     return None
 
@@ -1053,6 +1088,7 @@ def md_content_text(md, prof):
         if re.match(r'#{1,6}\s', s):
             list_mode = False
         s = re.sub(r'^#{1,6}\s+|^>\s?', '', s)
+        s = re.sub(r'\s*\(\s*인\s*\)\s*$', '', s)          # 서명 끝 날인 표시는 변환기가 뺀다
         if not list_mode:
             s = outline_level(s)[2]
         s = re.sub(r'!\[([^\]]*)\]\([^)]*\)', r'\1', s)
