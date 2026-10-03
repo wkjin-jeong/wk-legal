@@ -168,11 +168,22 @@ def party_line(s):
     return None
 
 
+def list_kind(title, lists):
+    """중간제목이 목록 구역이면 그 종류('claims' 청구취지 계열 / 'items' 증명방법·첨부서류 계열), 아니면 None.
+    '변경된 청구취지'처럼 구역 이름을 포함해도 목록 구역으로 본다."""
+    t = squeeze(re.sub(r'[\[\]【】()]', '', title))
+    if any(k in t for k in lists['claims']['sections']):
+        return 'claims'
+    if any(k in t for k in lists['sections']):
+        return 'items'
+    return None
+
+
 def parse_md(text, prof):
     """초안 markdown → {title, subtitles, parties, opening, has_da_eum, body[], date, signature[], court, annex[]}"""
     text = re.sub(r'<!--.*?-->', '', text, flags=re.S)
     lines = text.splitlines()
-    list_secs = set(prof['lists']['sections'])
+    list_secs = prof['lists']
     doc = {'title': '', 'subtitles': [], 'parties': [], 'opening': None, 'has_da_eum': False,
            'body': [], 'date': None, 'signature': [], 'court': None, 'annex': [], 'warnings': []}
     i, n = 0, len(lines)
@@ -270,25 +281,36 @@ def blocks(lines, list_secs, warnings):
         if m:
             out.append(('image', (clean_inline(m.group(1)), m.group(2)))); k += 1; continue
         if s.startswith('>'):
-            out.append(('quote', clean_inline(re.sub(r'^>\s?', '', s)))); k += 1; continue
-        u = unwrap(s)
-        if spaced_title(u) or squeeze(u) in list_secs:
-            out.append(('mid', u))
-            mode = 'list' if squeeze(u) in list_secs else 'outline'
+            q = clean_inline(re.sub(r'^>\s?', '', s))
+            if out and out[-1][0] == 'quote':
+                if q.strip():
+                    out[-1][1].append(q)          # 빈 줄만 사이에 둔 인용도 한 덩어리(상자 하나)
+            elif q.strip():
+                out.append(('quote', [q]))
             k += 1; continue
-        if mode == 'list' and re.match(r'#{1,6}\s', s):
+        u = unwrap(s)
+        lk = list_kind(u, list_secs)
+        unnumbered_head = bool(re.match(r'^#{1,6}\s', s)) and not outline_level(u)[0] \
+            and len(squeeze(u)) <= 20 and not re.search(r'[다요]\.?$', u)
+        if spaced_title(u) or (lk and len(squeeze(u)) <= 20 and not outline_level(u)[0]) or unnumbered_head:
+            out.append(('mid', u))
+            mode = lk or 'outline'
+            k += 1; continue
+        if mode != 'outline' and re.match(r'#{1,6}\s', s):
             mode = 'outline'                     # '#' 제목은 목록 구역을 끝낸다
-        if mode == 'list':
+        if mode == 'claims' and not re.match(r'^(\d{1,2}[.)]|[-*]\s)', s) and not re.match(r'^\s{3,}\S', raw):
+            out.append(('body', clean_inline(s))); k += 1; continue     # '라는 판결을 구합니다.' 등 청구취지 결어
+        if mode != 'outline':
             if re.match(r'^\s{3,}\S', raw) and out and out[-1][0] == 'item' and not outline_level(s)[0]:
                 out[-1][1][1].append(clean_inline(s))
             else:
-                out.append(('item', (clean_inline(re.sub(r'^[-*]\s+', '', s)), [])))
+                out.append(('item', (clean_inline(re.sub(r'^[-*]\s+', '', s)), [], mode)))
             k += 1; continue
         lv, num, rest = outline_level(re.sub(r'^#{1,6}\s+', '', s))
         if lv:
             out.append(('outline', (lv, num, clean_inline(rest).strip().strip('*').strip()))); k += 1; continue
         if re.match(r'^#{1,6}\s', s):
-            warnings.append(f'번호 없는 제목을 굵은 본문으로 넣음: {u[:30]}')
+            warnings.append(f'번호 없는 긴 제목을 굵은 본문으로 넣음: {u[:30]}')
             out.append(('strong', clean_inline(u))); k += 1; continue
         out.append(('body', clean_inline(re.sub(r'^[-*]\s+', '- ', s)))); k += 1
     check_numbering(out, warnings)
@@ -550,7 +572,10 @@ class Renderer:
         self.holder_p = self.h.para(self.body[1], 'CENTER')
         self.quote_p = self.h.para(self.body[1], left=bp['quote_indent'])
         lp = prof['lists']
-        self.list_p = self.h.para(self.base[1], 'JUSTIFY', line=lp['line_spacing'] or None, prev=0, next_=0)
+        self.list_fmt = {
+            'items': (self.h.para(self.base[1], 'JUSTIFY', line=lp['line_spacing'] or None, prev=0, next_=0), lp['lead_spaces']),
+            'claims': (self.h.para(self.base[1], 'JUSTIFY', line=lp['claims']['line_spacing'] or None, prev=0, next_=0),
+                       lp['claims']['lead_spaces'])}
         mid = self.mid or (self.body[0], self.h.para(self.body[1], 'CENTER'), self.strong_c)
         self.mid_fmt = (mid[0], self.h.para(mid[1], keep=True) if keep else mid[1], mid[2])
 
@@ -587,15 +612,25 @@ class Renderer:
                 pid = self.h.para(self.body[1], keep=True) if self.prof['heading']['keep_with_next'] else self.body[1]
                 out.append(para(pid, self.body[0], run(self.strong_c, val.replace('**', ''))))
             elif kind == 'quote':
-                out.append(para(self.quote_p, self.body[0], self.inline(val, self.body_c)))
+                style = bp['quote']
+                if style == 'box':
+                    out.append(para(self.h.para(self.body[1], 'JUSTIFY'), self.body[0],
+                                    f'<hp:run charPrIDRef="{self.body_c}">{self.box_xml(val)}<hp:t/></hp:run>'))
+                else:
+                    for q in val:
+                        if style == 'indent':
+                            out.append(para(self.quote_p, self.body[0], self.inline(q, self.body_c)))
+                        else:
+                            out.append(para(self.body[1], self.body[0], self.inline(self.lead(q, bp['lead_spaces']), self.body_c)))
             elif kind == 'mid':
                 sid, pid, cid = self.mid_fmt
                 out.append(para(pid, sid, run(cid, val)))
             elif kind == 'item':
-                text, conts = val
-                lead = ' ' * self.prof['lists']['lead_spaces']
+                text, conts, lkind = val
+                lpid, nlead = self.list_fmt[lkind]
+                lead = ' ' * nlead
                 t = escape(lead + text) + ''.join('<hp:lineBreak/>' + escape(lead + c) for c in conts)
-                out.append(para(self.list_p, self.base[0], f'<hp:run charPrIDRef="{self.body_c}"><hp:t>{t}</hp:t></hp:run>'))
+                out.append(para(lpid, self.base[0], f'<hp:run charPrIDRef="{self.body_c}"><hp:t>{t}</hp:t></hp:run>'))
             elif kind == 'table':
                 out.append(para(self.holder_p, self.body[0],
                                 f'<hp:run charPrIDRef="{self.body_c}">{self.table_xml(*val)}<hp:t/></hp:run>'))
@@ -669,6 +704,30 @@ class Renderer:
                 'vertRelTo="PARA" horzRelTo="COLUMN" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/>'
                 f'<hp:outMargin left="{out_m}" right="{out_m}" top="{out_m}" bottom="{out_m}"/>'
                 f'<hp:inMargin left="{in_m}" right="{in_m}" top="{in_m}" bottom="{in_m}"/>' + ''.join(trs) + '</hp:tbl>')
+
+    def box_xml(self, paras_text):
+        """인용 상자: 1×1 표에 인용 단락들을 넣는다(프로필 quote_box)."""
+        bx = self.prof['quote_box']
+        tsid, tpara, tchar = self.table_style
+        pp = self.h.para(tpara, 'JUSTIFY')
+        w = int(self.text_w * bx['width_ratio'])
+        cm = bx['cell_margin']
+        bf = self.h.border(bx['border'], bx['border'], bx['border'], bx['border'])
+        inner = ''.join(para(pp, tsid, self.inline(q, tchar)) for q in paras_text)   # 상자 글은 표 글꼴
+        om, (il, it) = bx['out_margin'], bx['in_margin']
+        return (f'<hp:tbl id="{next(_ids)}" zOrder="0" numberingType="TABLE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" '
+                f'lock="0" dropcapstyle="None" pageBreak="CELL" repeatHeader="1" rowCnt="1" colCnt="1" cellSpacing="0" '
+                f'borderFillIDRef="{bf}" noAdjust="0">'
+                f'<hp:sz width="{w}" widthRelTo="ABSOLUTE" height="5" heightRelTo="ABSOLUTE" protect="0"/>'
+                '<hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" '
+                'vertRelTo="PARA" horzRelTo="COLUMN" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/>'
+                f'<hp:outMargin left="{om}" right="{om}" top="{om}" bottom="{om}"/>'
+                f'<hp:inMargin left="{il}" right="{il}" top="{it}" bottom="{it}"/>'
+                f'<hp:tr><hp:tc name="" header="0" hasMargin="1" protect="0" editable="0" dirty="0" borderFillIDRef="{bf}">'
+                '<hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="CENTER" linkListIDRef="0" '
+                f'linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0">{inner}</hp:subList>'
+                '<hp:cellAddr colAddr="0" rowAddr="0"/><hp:cellSpan colSpan="1" rowSpan="1"/>'
+                f'<hp:cellSz width="{w}" height="5"/><hp:cellMargin left="{cm}" right="{cm}" top="{cm}" bottom="{cm}"/></hp:tc></hp:tr></hp:tbl>')
 
     def pic_xml(self, caption, path):
         cp = self.prof['picture']
@@ -892,8 +951,12 @@ class Renderer:
 
 
 def normalize_title(t):
+    """'준 비 서 면 (2)'처럼 한 글자씩 띄운 표제만 붙인다(자간은 양식 스타일이 맡는다). 낱말 띄어쓰기는 둔다."""
     t = re.sub(r'\*\*|__', '', t).strip()
-    return re.sub(r'(?<=[가-힣])\s+(?=[가-힣])', '', t)
+    m = re.match(r'^((?:[가-힣]\s+)+[가-힣])(?=\s*(\(|$))', t)
+    if m and len(m.group(1).split()) >= 2 and all(len(x) == 1 for x in m.group(1).split()):
+        return squeeze(m.group(1)) + t[m.end():]
+    return t
 
 
 def detect_side(doc, prof):
@@ -974,17 +1037,21 @@ def md_content_text(md, prof):
     md = re.sub(r'<!--.*?-->', '', md, flags=re.S)
     out = []
     list_mode = False
-    secs = set((prof or {}).get('lists', {}).get('sections', []))
+    lists = (prof or {}).get('lists') or {'sections': [], 'claims': {'sections': []}}
     for line in md.splitlines():
         s = line.strip()
-        if re.fullmatch(r'(-{3,}|\*{3,}|_{3,})', s) or re.match(r'#{1,6}\s', s):
-            list_mode = False                      # 구분선·# 제목에서 목록 구역이 끝난다(별지 등)
+        if re.fullmatch(r'(-{3,}|\*{3,}|_{3,})', s):
+            list_mode = False
         if re.fullmatch(r'\|?\s*:?-{3,}.*', s) or re.fullmatch(r'(-{3,}|\*{3,}|_{3,})', s):
             continue
         u = unwrap(s)
-        if spaced_title(u) or squeeze(u) in secs:
-            list_mode = squeeze(u) in secs
+        lk = list_kind(u, lists)
+        if spaced_title(u) or (lk and len(squeeze(u)) <= 20 and not outline_level(u)[0]) or \
+                (re.match(r'^#{1,6}\s', s) and not outline_level(u)[0] and len(squeeze(u)) <= 20):
+            list_mode = bool(lk)
             out.append(u); continue
+        if re.match(r'#{1,6}\s', s):
+            list_mode = False
         s = re.sub(r'^#{1,6}\s+|^>\s?', '', s)
         if not list_mode:
             s = outline_level(s)[2]

@@ -176,6 +176,46 @@ CASES = {
 
 ○○지방법원 귀중
 """, {"side": "원고측", "outline": {1: 4, 2: 3}, "tables": 0, "pics": 0, "annex": 0, "warn": 0, "segments": 2}),
+    "변경신청서": ("""청구취지 및 청구원인 변경신청서
+
+사    건   2025가단1 손해배상(기)
+원    고   홍길동
+피    고   주식회사 갑
+
+위 사건에 관하여 원고의 소송대리인은 다음과 같이 청구취지 및 청구원인을 변경합니다.
+
+## 변경된 청구취지
+
+1. 피고는 원고에게 10,000,000원을 지급하라.
+2. 소송비용은 피고가 부담한다.
+3. 제1항은 가집행할 수 있다.
+
+라는 판결을 구합니다.
+
+## 변경된 청구원인
+
+1. 손해배상책임의 발생
+
+가. 사고의 발생
+
+사고가 발생하였습니다.
+
+2. 손해배상의 범위
+
+> 인용문 첫 줄입니다.
+> 인용문 둘째 줄입니다.
+
+손해는 위와 같습니다.
+
+2026. 10. 3.
+
+원고 소송대리인
+법무법인 ○○
+담당변호사 ○○○
+
+○○지방법원 귀중
+""", {"side": "원고측", "outline": {1: 2, 2: 1}, "tables": 0, "pics": 0, "annex": 0, "warn": 0, "segments": 1,
+      "mids": 2, "claims": 3, "quotes": 1}),
 }
 
 REJECT = {
@@ -227,14 +267,28 @@ def run_case(name, md, exp, prof_path, tmp):
     for k, v in exp["outline"].items():
         if oc.get(k, 0) != v:
             errs.append(f"개요 {k} {oc.get(k, 0)} ≠ {v}")
-    if X.count("<hp:tbl ") != exp["tables"]:
-        errs.append(f"표 {X.count('<hp:tbl ')} ≠ {exp['tables']}")
+    boxes = len(re.findall(r'<hp:tbl [^>]*rowCnt="1" colCnt="1"', X))
+    if X.count("<hp:tbl ") - boxes != exp["tables"]:
+        errs.append(f"표 {X.count('<hp:tbl ') - boxes} ≠ {exp['tables']}")
+    nq = len([1 for kd, v in doc["body"] if kd == "quote"])
+    if prof["body"]["quote"] == "box" and boxes != nq:
+        errs.append(f"인용 상자 {boxes} ≠ 인용 {nq}")
+    if "quotes" in exp and nq != exp["quotes"]:
+        errs.append(f"인용 묶음 {nq} ≠ {exp['quotes']}")
+    if "mids" in exp and sum(1 for kd, _ in doc["body"] if kd == "mid") != exp["mids"]:
+        errs.append("중간제목 수 불일치")
+    if "claims" in exp:
+        cl = [v for kd, v in doc["body"] if kd == "item" and v[2] == "claims"]
+        lead = " " * prof["lists"]["claims"]["lead_spaces"]
+        if len(cl) != exp["claims"] or f"<hp:t>{lead}1. 피고는" not in X:
+            errs.append(f"청구취지 목록 {len(cl)} ≠ {exp['claims']} 또는 글자 번호·앞 공백 불일치")
     if X.count("<hp:pic ") != exp["pics"]:
         errs.append(f"그림 {X.count('<hp:pic ')} ≠ {exp['pics']}")
     if X.count("<hp:footer ") != 1 or "TOTAL_PAGE" not in X:
         errs.append("꼬리말(쪽 번호) 보존 실패")
     first = X[slice(*render.top_paras(X)[0])]
-    if re.search(r"[가-힣] [가-힣]", "".join(re.findall(r"<hp:t>([^<]*)", first))):
+    toks = "".join(re.findall(r"<hp:t>([^<]*)", first)).split()
+    if any(len(a) == 1 and len(b) == 1 for a, b in zip(toks, toks[1:])):     # '준 비 서 면'처럼 한 글자씩 띄운 채 남음
         errs.append("표제 글자 사이 공백 미정리")
     if not re.search(r"<hp:t>[^<]{1,3}<hp:tab ", X):
         errs.append("당사자 줄 탭 배분 없음")
@@ -263,7 +317,7 @@ def run_case(name, md, exp, prof_path, tmp):
 def profile_asserts(prof, X, H):
     errs = []
     tp = prof["table"]
-    if X.count("<hp:tbl "):
+    if X.count("<hp:tbl ") > len(re.findall(r'<hp:tbl [^>]*rowCnt="1" colCnt="1"', X)):
         widths = set(re.findall(r'<hh:(?:left|top)Border type="SOLID" width="([\d.]+ mm)"', H))
         for w in {tp["outer"], tp["inner"]}:
             if w not in widths:
