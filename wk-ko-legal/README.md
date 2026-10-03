@@ -21,7 +21,7 @@
 - ko-administrative-drafting은 기준 시점 법령(처분시법, 제재처분은 위반행위시법 — SKILL.md 4.2), ko-criminal-drafting은 행위시법을 ko-law-api `get-asof`로 확인한다. 형사 양형기준은 로컬 구조화 파일(json/md, 사용자 제공 시) 우선, 없으면 양형위원회 공식 웹사이트 확인.
 - drafting 4종의 문체·문형 기본값은 한국 법조 서면의 일반 관행이다. 로컬 실무지식베이스(기본 `~/LLM-wiki`, Cowork VM은 마운트된 `~/mnt/LLM-wiki`, `WK_LEGAL_WIKI_ROOT`로 재정의 — 지정하면 그 경로만 본다)가 있으면 `shared/LLM-wiki-연동-정책.md`에 따라서만 병용하고, 없으면 연동 단계는 조용히 생략된다.
 - 판례는 판례DB를 먼저 쓴다(`shared/판례-인용-정책.md` 1.): 원격 판례 MCP(llm-wiki 커넥터)와 로컬 판례DB(`{지식베이스 루트}/판례DB/_색인.sqlite` — `shared/case_db.py`로 읽기 전용 조회) 중 수록 범위가 최신인 쪽. 판례DB 원문은 원본 대조 없이 인용하고, 인용 형식은 따옴표 없는 원문 전재 + 괄호 출처가 기본(큰따옴표 직접 인용도 가능).
-- 한글(hwpx) 출력: 민사·행정·형사 서면은 사용자가 요청하면 확정된 md(제출본)에서 hwpx를 만든다(`shared/hwpx-출력-정책.md`, 변환기 `shared/hwpx/render.py` — 표준 라이브러리만). 사무소 양식과 서식(표 선·그림 캡션·강조·서명자)은 작업 폴더 최상위의 `.wk-legal/hwpx/profile.json`(로컬 프로필)에 두고, 없으면 기본양식(휴먼 계열 글꼴)을 쓴다. 양식에 표지를 넣는 `render.py mark`로 사무소 양식을 프로필로 만든다.
+- 한글(hwpx) 출력: 민사·행정·형사 서면과 자문의견서는 사용자가 요청하면 확정된 md(제출본)에서 hwpx를 만든다(`shared/hwpx-출력-정책.md`, 변환기 `shared/hwpx/render.py` — 표준 라이브러리만). 사무소 양식과 서식(표 선·그림 캡션·강조·서명자)은 작업 폴더 최상위의 `.wk-legal/hwpx/profile.json`(로컬 프로필)에 두고, 없으면 기본양식(휴먼 계열 글꼴)을 쓴다. 양식에 표지를 넣는 `render.py mark`로 사무소 양식을 프로필로 만든다.
 - lbox 2종·bigcase: Claude in Chrome + 해당 사이트(lbox.kr / bigcase.ai) 로그인 전제. 서면 작성에서는 판례DB로 부족한 쟁점·핵심 쟁점의 핵심 판례 검색·최신성·인용 수·사건번호 URL 직행 검증에만 쓴다.
 
 ## 라이선스

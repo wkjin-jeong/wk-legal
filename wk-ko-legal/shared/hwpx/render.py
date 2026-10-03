@@ -38,6 +38,10 @@ OUTLINE_RE = [                        # 개요 1~6: 1. / 가. / 1) / 가) / (1) 
     re.compile(r'^\(([가나다라마바사아자차카타파하])\)\s+'),
 ]
 HANGUL_SEQ = '가나다라마바사아자차카타파하'
+ROMAN_RE = re.compile(r'^(I{1,3}|IV|VI{0,3}|IX|X)\.\s+')
+ROMAN = {'I': 1, 'II': 2, 'III': 3, 'IV': 4, 'V': 5, 'VI': 6, 'VII': 7, 'VIII': 8, 'IX': 9, 'X': 10}
+FIELD_LABELS = ('수신', '참조', '발신', '일자', '제목', '문서번호')   # 자문의견서 머리(레터헤드 칸)
+FIELD_RE = re.compile(r'^\s*(?:\*\*)?(수\s*신|참\s*조|발\s*신|일\s*자|제\s*목|문서\s*번호)(?:\*\*)?\s*:\s*(.*)$')
 PARTY_LABELS = sorted("""사건 사건명 원고 피고 원고들 피고들 원고겸반소피고 피고겸반소원고 반소원고 반소피고 채권자 채무자 제3채무자
 신청인 피신청인 항고인 재항고인 상대방 청구인 피청구인 항소인 피항소인 상고인 피상고인 피고인 피의자 고소인 피고소인
 고발인 피고발인 진정인 피진정인 참가인 보조참가인 독립당사자참가인 소송수계인 원고승계참가인 신청외
@@ -112,9 +116,10 @@ def load_profile(path):
     return prof
 
 
-def pick_template(prof, side):
+def pick_template(prof, side, kind=None):
     t = prof['templates']
-    name = t.get(side) if side else None
+    name = t.get('자문') if kind == 'advisory' else None
+    name = name or (t.get(side) if side else None)
     name = name or t.get('기본') or next(iter(t.values()))
     path = name if os.path.isabs(name) else os.path.join(prof['_dir'], name)
     if not os.path.isfile(path):
@@ -185,7 +190,7 @@ def parse_md(text, prof):
     text = re.sub(r'<!--.*?-->', '', text, flags=re.S)
     lines = text.splitlines()
     list_secs = prof['lists']
-    doc = {'title': '', 'subtitles': [], 'parties': [], 'opening': None, 'has_da_eum': False,
+    doc = {'title': '', 'subtitles': [], 'parties': [], 'opening': None, 'has_da_eum': False, 'fields': {}, 'closing': None,
            'body': [], 'date': None, 'signature': [], 'court': None, 'annex': [], 'warnings': []}
     i, n = 0, len(lines)
     while i < n and not lines[i].strip():
@@ -201,7 +206,12 @@ def parse_md(text, prof):
         if not raw.strip():
             i += 1; continue
         if raw.lstrip().startswith('>'):
-            raise RenderError('표제 뒤에 작성 메모(> …) — 메모·검토 논평을 뺀 제출본 md를 만들어 변환한다(hwpx-출력-정책 2.)')
+            if re.search(r'초안|작성|메모|검토\s*(?:필요|사항|요청)|확인\s*필요|버전|TODO|\b[vr]\d', raw):
+                raise RenderError('표제 뒤에 작성 메모(> …) — 메모·검토 논평을 뺀 제출본 md를 만들어 변환한다(hwpx-출력-정책 2.)')
+            break                                   # 【검토 결과 요지】 같은 상자는 본문으로
+        fm = FIELD_RE.match(raw)
+        if fm:
+            doc['fields'][squeeze(fm.group(1))] = re.sub(r'\*\*', '', fm.group(2)).strip(); i += 1; continue
         u = re.sub(r'\*\*|__', '', unwrap(raw))
         mb = re.match(r'^\[\s*([가-힣 ]{2,10}?)\s*\]\s*(\S.*)$', u) or \
             (re.match(r'^([가-힣][가-힣 ]{3,12}?)\s*:\s*(\S.*)$', u) if not re.match(r'^\s{3,}', raw) else None)
@@ -258,14 +268,23 @@ def parse_md(text, prof):
         j += 1
     if j < len(body_lines):
         first = unwrap(body_lines[j])
-        if not outline_level(first)[0] and not spaced_title(first) and re.search(r'사건에\s*관하여|다음과\s*같이|대리인은', first):
+        if not outline_level(first)[0] and not spaced_title(first) and re.search(r'사건에\s*관하여|다음과\s*같이|대리인은|질의하신|의견을\s*(?:개진|드립|회신)', first):
             doc['opening'] = clean_inline(first.strip()); j += 1
             while j < len(body_lines) and not body_lines[j].strip():
                 j += 1
             if j < len(body_lines) and squeeze(unwrap(body_lines[j])) == '다음':
                 doc['has_da_eum'] = True; j += 1
-    if date_i is None:
+    bl = body_lines[j:]
+    nz = [x for x in range(len(bl)) if bl[x].strip()]
+    if nz and re.search(r'^이상과\s*같이|참고하시기\s*바랍니다|문의\s*사항이\s*있으면', unwrap(bl[nz[-1]])):
+        doc['closing'] = clean_inline(unwrap(bl[nz[-1]]))      # 자문의견서 맺음말 — 양식의 맺음말 자리로
+        body_lines = body_lines[:j] + bl[:nz[-1]]
+    if date_i is None and doc['fields'].get('일자'):
+        doc['date'] = doc['fields']['일자']                  # 자문의견서는 일자 칸의 날짜를 서명 위 날짜로도 쓴다
+    if date_i is None and not doc['date']:
         doc['warnings'].append('날짜 줄을 찾지 못함 — 서면 전문인지 확인(양식의 서명·수신처 자리는 비운다)')
+    if doc['fields'] and not doc['parties']:
+        doc['kind'] = 'advisory'
     doc['body'] = blocks(body_lines[j:], list_secs, doc['warnings'])
     doc['annex_blocks'] = blocks(doc['annex'][1:], list_secs, doc['warnings']) if doc['annex'] else []
     doc['trailer_blocks'] = blocks(doc['trailer'], list_secs, doc['warnings']) if doc['trailer'] else []
@@ -277,6 +296,7 @@ def blocks(lines, list_secs, warnings):
     """본문 줄 → 블록 목록. 블록: (종류, 값)
     종류: outline(level, text) / body(text) / quote(text) / mid(text) / item(text, [이음줄]) / table(rows, aligns) / image(cap, path)"""
     out, mode = [], 'outline'
+    has_roman = any(ROMAN_RE.match(re.sub(r'^#{1,6}\s+', '', l.strip())) for l in lines)
     k, n = 0, len(lines)
     while k < n:
         raw = lines[k]
@@ -307,7 +327,7 @@ def blocks(lines, list_secs, warnings):
             k += 1; continue
         u = unwrap(s)
         lk = list_kind(u, list_secs)
-        unnumbered_head = bool(re.match(r'^#{1,6}\s', s)) and not outline_level(u)[0] \
+        unnumbered_head = bool(re.match(r'^#{1,6}\s', s)) and not outline_level(u)[0] and not ROMAN_RE.match(u) \
             and len(squeeze(u)) <= 20 and not re.search(r'[다요]\.?$', u)
         if spaced_title(u) or (lk and len(squeeze(u)) <= 20 and not outline_level(u)[0]) or unnumbered_head:
             out.append(('mid', u))
@@ -323,15 +343,53 @@ def blocks(lines, list_secs, warnings):
             else:
                 out.append(('item', (clean_inline(re.sub(r'^[-*]\s+', '', s)), [], mode)))
             k += 1; continue
-        lv, num, rest = outline_level(re.sub(r'^#{1,6}\s+', '', s))
+        hs = re.sub(r'^#{1,6}\s+', '', s)
+        mr = ROMAN_RE.match(hs)
+        if mr:      # 자문의견서 'I. 사안의 개요' — 로마 숫자는 개요 1, 그 아래 번호는 한 단계씩 내린다(1. → 가. → 1))
+            lv, num, rest = 1, mr.group(1), hs[mr.end():]
+        else:
+            lv, num, rest = outline_level(hs)
+            if lv and has_roman:
+                lv = min(lv + 1, 6)
         if lv:
             out.append(('outline', (lv, num, clean_inline(rest).strip().strip('*').strip()))); k += 1; continue
         if re.match(r'^#{1,6}\s', s):
             warnings.append(f'번호 없는 긴 제목을 굵은 본문으로 넣음: {u[:30]}')
             out.append(('strong', clean_inline(u))); k += 1; continue
         out.append(('body', clean_inline(re.sub(r'^[-*]\s+', '- ', s)))); k += 1
+    compact_levels(out, warnings)
     check_numbering(out, warnings)
     return out
+
+
+def ordinal(num):
+    if num in ROMAN:
+        return ROMAN[num]
+    if num.isdigit():
+        return int(num)
+    return HANGUL_SEQ.index(num) + 1 if num in HANGUL_SEQ else 0
+
+
+def compact_levels(blks, warnings):
+    """건너뛴 단계를 당긴다 — '가.' 바로 아래 '(1)'처럼 중간 단계를 비우면 바로 위 항목의 다음 단계로 둔다.
+    중간제목에서 새로 센다."""
+    stack, jumped = [], 0
+    for idx, (kind, val) in enumerate(blks):
+        if kind == 'mid':
+            stack = []
+            continue
+        if kind != 'outline':
+            continue
+        lv = val[0]
+        while stack and stack[-1] >= lv:
+            stack.pop()
+        eff = min(len(stack) + 1, 6)
+        stack.append(lv)
+        if eff != lv:
+            jumped += 1
+            blks[idx] = ('outline', (eff,) + tuple(val[1:]))
+    if jumped:
+        warnings.append(f'번호 단계를 건너뛴 항목 {jumped}개를 한 단계씩 당김 — 자동 번호의 모양이 초안과 다르다(예: (1) → 1))')
 
 
 def check_numbering(blks, warnings):
@@ -343,14 +401,14 @@ def check_numbering(blks, warnings):
         if kind != 'outline':
             continue
         lv, num, text = val[:3]
-        if num in ('1', '가') and cnt[lv] > 0:
+        if ordinal(num) == 1 and cnt[lv] > 0:
             seg += 1
             cnt = [0] * 7
         cnt[lv] += 1
         for d in range(lv + 1, 7):
             cnt[d] = 0
         expect = str(cnt[lv]) if lv in (1, 3, 5) else (HANGUL_SEQ[cnt[lv] - 1] if cnt[lv] <= len(HANGUL_SEQ) else '?')
-        if num != expect:
+        if ordinal(num) != cnt[lv]:
             warnings.append(f'번호 불일치: 초안 "{num}" → 자동 번호 "{expect}" ({text[:20]}) — 본문 안의 항목 참조를 확인')
         blks[idx] = ('outline', (lv, num, text, seg))
 
@@ -477,11 +535,17 @@ def top_paras(sec):
     return out
 
 
-def marker_of(p):
+def marker_full(p):
+    """표지 문단이면 (이름, 인자, 기본 글): {{이름}} · {{이름|기본 글}} · {{변호사=이름}}."""
     q = re.sub(r'<hp:subList.*?</hp:subList>', '', p, flags=re.S)
     t = ''.join(re.findall(r'<hp:t>([^<]*)', q)).strip()
-    m = re.fullmatch(r'\{\{(\S+?)\}\}', t)
-    return m.group(1) if m else None
+    m = re.fullmatch(r'\{\{([^{}|=\s]+)(?:=([^{}|]+))?(?:\|([^{}]*))?\}\}', t)
+    return (m.group(1), m.group(2), m.group(3)) if m else None
+
+
+def marker_of(p):
+    m = marker_full(p)
+    return m[0] if m else None
 
 
 def outer_elems(s, tag):
@@ -538,6 +602,21 @@ def set_text(p, runs_xml):
                     for seg in inner)
         keep.append(r)
     return head + ''.join(keep) + runs_xml + '</hp:p>'
+
+
+def replace_text_keep(p, text):
+    """문단의 첫 글(<hp:t>)을 text로 바꾸고 나머지 글은 비운다 — 같은 run의 그림(도장)은 남는다."""
+    head = re.match(r'<hp:p [^>]*>', p).group(0)
+    body = p[len(head):]
+    done = []
+    def sub(m):
+        if done:
+            return '<hp:t/>'
+        done.append(1)
+        return f'<hp:t>{escape(text)}</hp:t>'
+    segs = re.split(r'(<hp:subList.*?</hp:subList>)', body, flags=re.S)
+    return head + ''.join(sg if sg.startswith('<hp:subList') else re.sub(r'<hp:t>.*?</hp:t>|<hp:t/>', sub, sg, flags=re.S)
+                          for sg in segs)
 
 
 def first_char(p):
@@ -821,7 +900,7 @@ class Renderer:
         t += '<hp:lineBreak/>'.join(escape(v) for v in values)
         return f'<hp:run charPrIDRef="{first_char(proto)}"><hp:t>{t}</hp:t></hp:run>'
 
-    def signer_lines(self, sig, side_label):
+    def signer_lines(self, sig, side_label, with_names=False):
         """초안 서명 블록 → [(역할, 글)]. 자리표시(○○)는 프로필 서명자로 채운다."""
         sp = self.prof['signers']
         out, lawyers_md = [], []
@@ -851,26 +930,43 @@ class Renderer:
             lawyers = sp.get('lawyers') or lawyers_md
         else:
             lawyers = lawyers_md
+        if not firm and not lawyers_md and sp.get('firm'):
+            firm = sp['firm']                               # 서명 줄이 없는 초안(자문의견서) — 프로필 서명자
         res = []
         if agent:
-            res.append(('대리인', agent))
-        res += out
+            res.append(('대리인', agent, None))
+        res += [(r, t, None) for r, t in out]
         if firm:
-            res.append(('법인', firm))
+            res.append(('법인', firm, None))
         for nm in lawyers:
             plain = nm.replace(' ', '')
             spaced = ' '.join(plain) if len(plain) <= 4 and '○' not in plain else nm
-            res.append(('변호사', sp['lawyer_line'].replace('{name_spaced}', spaced).replace('{name}', nm)))
-        return res
+            res.append(('변호사', sp['lawyer_line'].replace('{name_spaced}', spaced).replace('{name}', nm), plain))
+        return res if with_names else [(r, t) for r, t, _ in res]
 
     def build(self, doc):
         ps = top_paras(self.sec)
         paras = [self.sec[a:b] for a, b in ps]
-        marks = {}
+        marks, lawyer_protos = {}, {}
         for idx, p in enumerate(paras):
-            mk = marker_of(p)
-            if mk:
-                marks.setdefault(mk, idx)
+            mf = marker_full(p)
+            if mf:
+                marks.setdefault(mf[0], idx)
+                if mf[0] == '변호사':
+                    lawyer_protos[squeeze(mf[1] or '')] = p
+        if doc.get('closing') and '맺음말' not in marks:     # 맺음말 자리가 없는 양식(소송 서면)은 본문 끝 문단으로
+            doc['body'] = doc['body'] + [('body', doc['closing'])]
+            doc['closing'] = None
+        if '당사자' in marks:          # 레터헤드 칸이 없는 양식: 자문 머리(수신·참조·제목·일자)를 당사자 줄로
+            for k in ('수신', '참조', '일자', '제목', '문서번호'):
+                v = (doc.get('fields') or {}).get(k)
+                if v and '{{' + k + '}}' not in self.sec:
+                    doc['parties'].append([k, [v]])
+                    doc['fields'] = {kk: vv for kk, vv in doc['fields'].items() if kk != k}
+        sig_anchor = min([marks[m2] for m2 in ('대리인', '법인', '변호사') if m2 in marks], default=None)
+        sig_idx = [i2 for i2, p2 in enumerate(paras) if marker_of(p2) in ('대리인', '법인', '변호사')]
+        sig_end = marks.get('법원', max(sig_idx, default=-1))      # 서명 묶음의 끝(수신처 줄이 없는 양식은 마지막 서명 줄)
+        self.dropped = []
         if '본문' not in marks:
             raise RenderError('양식에 {{본문}} 표지가 없음 — `render.py mark`로 표지본을 만드세요')
         secpr = re.search(r'<hp:pagePr [^>]*width="(\d+)" height="(\d+)"[^>]*>\s*<hp:margin [^>]*left="(\d+)" right="(\d+)" top="(\d+)" bottom="(\d+)"', self.sec)
@@ -880,9 +976,10 @@ class Renderer:
         moved_ctrl = []
         out = []
         for idx, p in enumerate(paras):
-            mk = marker_of(p)
+            mf = marker_full(p)
+            mk, marg, mdef = mf if mf else (None, None, None)
             if mk is None:
-                if idx > marks.get('날짜', 10 ** 9) and keep_sig and idx < marks.get('법원', -1):
+                if idx > marks.get('날짜', 10 ** 9) and keep_sig and idx < sig_end:
                     pid = re.search(r'paraPrIDRef="(\d+)"', p).group(1)
                     p = p.replace(f'paraPrIDRef="{pid}"', f'paraPrIDRef="{self.h.para(pid, keep=True)}"', 1)
                 out.append(p); continue
@@ -892,16 +989,22 @@ class Renderer:
             cid = first_char(p)
             if mk == '표제':
                 fill = [set_text(p, run(cid, normalize_title(doc['title'])))]
+            elif mk == '맺음말':
+                text = doc.get('closing') or mdef
+                if text:
+                    fill = [set_text(p, run(cid, self.lead(text, self.prof['body']['lead_spaces'])))]
             elif mk == '당사자':
                 fill = [set_text(p, self.party_runs(p, lab, vals)) for lab, vals in doc['parties']]
                 if doc['subtitles']:
                     fill = [para(self.h.para(self.base[1], 'CENTER'), self.base[0], run(self.body_c, s))
                             for s in doc['subtitles']] + fill
             elif mk == '모두문':
-                if doc['opening']:
-                    fill = [set_text(p, self.inline(self.lead(doc['opening'], self.prof['body']['lead_spaces']), cid))]
+                text = doc['opening'] or mdef
+                if text:
+                    fill = [set_text(p, self.inline(self.lead(text, self.prof['body']['lead_spaces']), cid))]
             elif mk == '다음':
-                if doc['has_da_eum']:
+                if doc['has_da_eum'] or mdef is not None:
+                    p = re.sub(r'\{\{다음\|[^{}]*\}\}', '{{다음}}', p)
                     fill = [re.sub(r'\{\{다음\}\}', '다\t음', p).replace('\t', '<hp:tab width="5700" leader="0" type="1"/>')]
             elif mk == '본문':
                 fill = self.render_blocks(doc['body'])
@@ -910,18 +1013,23 @@ class Renderer:
                     q = set_text(p, run(cid, doc['date']))
                     fill = [q.replace(f'paraPrIDRef="{pid}"', f'paraPrIDRef="{self.h.para(pid, keep=True)}"', 1) if keep_sig else q]
             elif mk in ('대리인', '법인', '변호사'):
-                if mk == '대리인':
+                if idx == sig_anchor:
                     fill = []
                     protos = {m2: paras[marks[m2]] for m2 in ('대리인', '법인', '변호사') if m2 in marks}
-                    for role, text in self.signer_lines(doc['signature'], None):
+                    for role, text, name in self.signer_lines(doc['signature'], None, with_names=True):
                         pr = protos.get(role) or protos.get('대리인') or p
-                        ppid = re.search(r'paraPrIDRef="(\d+)"', pr).group(1)
-                        q = set_text(pr, run(first_char(pr), text))
+                        if role == '변호사' and lawyer_protos.get(squeeze(name or '')):
+                            q = replace_text_keep(lawyer_protos[squeeze(name)], text)      # 이름이 같은 줄의 도장 그림을 쓴다
+                        elif role == '변호사':
+                            q = set_text(pr, run(first_char(pr), text))                    # 도장 없는 이름은 그림 없이
+                        else:
+                            q = set_text(pr, run(first_char(pr), text))
+                        ppid = re.search(r'paraPrIDRef="(\d+)"', q).group(1)
                         if keep_sig:
                             q = q.replace(f'paraPrIDRef="{ppid}"', f'paraPrIDRef="{self.h.para(ppid, keep=True)}"', 1)
                         fill.append(q)
                 else:
-                    fill = []            # 대리인 표지 자리에서 한꺼번에 채움
+                    fill = []            # 서명 블록 첫 표지 자리에서 한꺼번에 채움
             elif mk == '법원':
                 if doc['court']:
                     fill = [set_text(p, run(cid, doc['court']))]
@@ -947,6 +1055,23 @@ class Renderer:
             out[0] = first[:pos] + ins + first[pos:]
         out = [re.sub(r'<hp:linesegarray>.*?</hp:linesegarray>', '', p, flags=re.S) for p in out]
         self.sec = self.sec[:ps[0][0]] + ''.join(out) + self.sec[ps[-1][1]:]
+        fields = dict(doc.get('fields') or {})
+        if doc.get('date') and not fields.get('일자'):
+            fields['일자'] = doc['date']
+        used = set()
+        def fill_field(m):
+            used.add(m.group(1))
+            return escape(fields.get(m.group(1), ''))
+        self.sec = re.sub(r'\{\{(' + '|'.join(FIELD_LABELS) + r')\}\}', fill_field, self.sec)
+        for k, v in (doc.get('fields') or {}).items():        # 초안에 적힌 필드만(날짜에서 만든 일자는 제외)
+            if k not in used and v:
+                if k == '발신':
+                    self.dropped.append(v)          # 발신(사무소·변호사)은 레터헤드·서명이 대신한다
+                else:
+                    doc['warnings'].append(f'양식에 "{k}" 자리가 없어 넣지 못함 — 한글에서 직접 넣을 것')
+                    self.dropped.append(v)
+        if '표제' not in marks and doc.get('title'):
+            self.dropped.append(doc['title'])          # 표제 자리가 없는 양식(자문의견서 레터헤드)
         return self
 
     def render_annex(self, doc):
@@ -1010,7 +1135,7 @@ def detect_side(doc, prof):
 
 # ───────────────────────── 검사 ─────────────────────────
 
-def check(path, md_text=None, prof=None):
+def check(path, md_text=None, prof=None, ignore=()):
     """구조 검사 + (초안이 있으면) 글자 누락 검사. 문제 목록을 돌려준다."""
     probs = []
     z = zipfile.ZipFile(path)
@@ -1061,6 +1186,7 @@ def check(path, md_text=None, prof=None):
     if md_text is not None:
         got = Counter(c for c in ''.join(re.findall(r'<hp:t>((?:[^<]|<hp:(?:tab|lineBreak)[^>]*/>)*)', X)) if c.isalnum())
         want = Counter(c for c in md_content_text(md_text, prof) if c.isalnum())
+        want -= Counter(c for t in ignore for c in t if c.isalnum())     # 양식에 자리가 없어 의도적으로 뺀 글
         lost = want - got
         if lost:
             probs.append('초안 글자 누락: ' + ''.join(sorted(lost.elements()))[:60])
@@ -1082,12 +1208,16 @@ def md_content_text(md, prof):
         u = unwrap(s)
         lk = list_kind(u, lists)
         if spaced_title(u) or (lk and len(squeeze(u)) <= 20 and not outline_level(u)[0]) or \
-                (re.match(r'^#{1,6}\s', s) and not outline_level(u)[0] and len(squeeze(u)) <= 20):
+                (re.match(r'^#{1,6}\s', s) and not outline_level(u)[0] and not ROMAN_RE.match(u) and len(squeeze(u)) <= 20):
             list_mode = bool(lk)
             out.append(u); continue
         if re.match(r'#{1,6}\s', s):
             list_mode = False
+        fm = FIELD_RE.match(s)
+        if fm:
+            out.append(fm.group(2).replace('**', '')); continue          # '수신: …' — 라벨은 양식 칸에 있다
         s = re.sub(r'^#{1,6}\s+|^>\s?', '', s)
+        s = ROMAN_RE.sub('', s)
         s = re.sub(r'\s*\(\s*인\s*\)\s*$', '', s)          # 서명 끝 날인 표시는 변환기가 뺀다
         if not list_mode:
             s = outline_level(s)[2]
@@ -1114,6 +1244,19 @@ def mark_template(src, dst, no_background=False):
     ps = top_paras(X)
     paras = [X[a:b] for a, b in ps]
     out, found = [], []
+    # 자문의견서 레터헤드: 표 칸 안 '일⇥자 : …'·'수⇥신 : …' 줄의 값 자리에 인라인 표지
+    advisory = False
+    def field_cell(m):
+        nonlocal advisory
+        inner = m.group(0)
+        label = squeeze(re.split(r'\s*:\s*', re.sub(r'<hp:t>|<hp:tab[^>]*/>', '', inner), 1)[0])
+        if label in FIELD_LABELS:
+            advisory = True
+            found.append(label)
+            return re.sub(r'((?<!hp):\s*)[^<]*</hp:t>$', lambda mm: mm.group(1) + '{{' + label + '}}</hp:t>', inner)
+        return inner
+    if paras and '<hp:tbl ' in paras[0]:
+        paras[0] = re.sub(r'<hp:t>(?:[^<]|<hp:tab[^>]*/>)*:\s*[^<]*</hp:t>', field_cell, paras[0])
     body_done = False
     after_date = False
     lawyer_done = False
@@ -1126,9 +1269,9 @@ def mark_template(src, dst, no_background=False):
         text = ''.join(re.findall(r'<hp:t>((?:[^<]|<hp:tab[^>]*/>)*)', q))
         plain = re.sub(r'<hp:tab[^>]*/>', '', text).strip()
         cid = first_char(p)
-        def put(mk):
+        def put(mk, default=None):
             found.append(mk)
-            return set_text(p, run(cid, '{{' + mk + '}}'))
+            return set_text(p, run(cid, '{{' + mk + ('|' + default if default is not None else '') + '}}'))
         if sname == '문서제목' and '표제' not in found:
             out.append(put('표제')); continue
         if '<hp:tab' in text and intent(pid) < 0 and not body_done:
@@ -1139,9 +1282,13 @@ def mark_template(src, dst, no_background=False):
                 party_done = True
             continue
         if sname == '중간제목' and squeeze(plain) == '다음':
-            out.append(put('다음')); continue
-        if (sname == '본문' or '사건에 관하여' in plain) and '모두문' not in found and not body_done:
-            out.append(put('모두문')); continue
+            out.append(put('다음', '' if advisory else None)); continue    # 자문: 초안에 없어도 「다 음」은 둔다
+        if (sname == '본문' or '사건에 관하여' in plain or re.search(r'질의하신|의견을\s*개진', plain)) \
+                and '모두문' not in found and not body_done:
+            # 자문의견서 모두문은 상용 문구 — 초안에 모두문이 없으면 양식 문구를 그대로 쓴다
+            out.append(put('모두문', plain if advisory and not no_background else None)); continue
+        if body_done and not after_date and re.match(r'^이상과\s*같이', plain):
+            out.append(put('맺음말', plain if not no_background else None)); continue
         if sname.startswith('개요') and not after_date:
             if not body_done:
                 out.append(put('본문')); body_done = True
@@ -1152,7 +1299,11 @@ def mark_template(src, dst, no_background=False):
             if sname == '법원' or plain.endswith('귀중'):
                 out.append(put('법원')); continue
             if re.match(r'^(담당)?변호사', plain):
-                if not lawyer_done:
+                if '<hp:pic ' in p and not no_background:     # 도장 그림이 있는 줄은 이름별로 모두 남긴다
+                    nm = squeeze(re.sub(r'^(담당)?변호사', '', plain))
+                    found.append('변호사')
+                    out.append(replace_text_keep(p, '{{변호사=' + nm + '}}'))
+                elif not lawyer_done:
                     out.append(put('변호사')); lawyer_done = True
                 continue
             if re.search(r'법무법인|법률사무소|합동법률|법무조합', plain):
@@ -1196,13 +1347,13 @@ def cmd_build(a):
     prof = load_profile(prof_path)
     doc = parse_md(md, prof)
     side = a.side or detect_side(doc, prof)
-    tpl = a.template or pick_template(prof, side)
+    tpl = a.template or pick_template(prof, side, doc.get('kind'))
     out = a.output or os.path.splitext(md_path)[0] + '.hwpx'
     if os.path.exists(out) and not a.force:
         raise RenderError(f'이미 있음(한글에서 고친 파일일 수 있음): {out} — 새 이름은 -o, 덮어쓰려면 --force')
     r = Renderer(tpl, prof, os.path.dirname(md_path)).build(doc)
     r.save(out)
-    probs = check(out, md, prof)
+    probs = check(out, md, prof, ignore=r.dropped)
     print(f'출력: {out}')
     print(f'프로필: {prof_path or "기본(플러그인)"} · 양식: {os.path.basename(tpl)} · 측: {side or "판단 못 함(기본 양식)"}')
     for w in doc['warnings']:
@@ -1223,7 +1374,8 @@ def cmd_check(a):
 def cmd_mark(a):
     found = mark_template(a.template, a.output, a.no_background)
     print(f'표지: {", ".join(found)}')
-    missing = [m for m in ('표제', '당사자', '본문', '날짜', '법원') if m not in found]
+    need = ('본문', '날짜') if any(f in found for f in FIELD_LABELS) else ('표제', '당사자', '본문', '날짜', '법원')   # 자문 레터헤드 양식
+    missing = [m for m in need if m not in found]
     if missing:
         print(f'경고: 찾지 못한 표지 {missing} — 한글에서 해당 문단에 {{{{표지}}}}를 직접 적으세요')
     return 0

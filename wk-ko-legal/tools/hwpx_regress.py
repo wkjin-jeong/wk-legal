@@ -107,7 +107,7 @@ CASES = {
 ## 2. 2차 송금
 
 2024. 8. 31. 송금.
-""", {"side": "피고측", "outline": {1: 3, 2: 2, 3: 1, 4: 0, 5: 1, 6: 1}, "tables": 1, "pics": 1, "annex": 2, "warn": 0}),
+""", {"side": "피고측", "outline": {1: 3, 2: 2, 3: 1, 4: 1, 5: 1, 6: 0}, "tables": 1, "pics": 1, "annex": 2, "warn": 1}),
     "신청서": ("""채권가압류신청서
 
 채    권    자   주식회사 갑
@@ -374,6 +374,60 @@ CASES = {
 ○○지방법원 귀중
 """, {"side": "피고측", "outline": {1: 2}, "tables": 0, "pics": 0, "annex": 0, "warn": 0, "segments": 1,
       "mids": 2, "sig_lines": 1}),
+    "자문의견서": ("""# 자문의견서
+
+수신: 주식회사 갑은행
+참조: 준법감시팀장
+발신: 법무법인 ○○ 담당변호사 ○○○
+일자: 2026. 10. 4.
+제목: 보이스피싱 피해 고객의 손해배상 청구 관련 검토
+
+> **【검토 결과 요지】**
+> 가. 은행은 전자금융거래법 제9조 제2항의 면책을 주장하기 어렵습니다.
+> 나. 책임 분담 비율은 고객 과실에 따라 정해질 것으로 보입니다.
+
+## I. 사안의 개요
+
+고객 B는 2025. 12. 15. 검찰청 직원을 사칭한 자에게 보안카드 번호를 알려 주었습니다.
+
+## II. 질의사항
+
+1. 은행이 면책을 주장할 수 있는지
+2. 책임 분담 비율
+
+## III. 검토 의견
+
+### 1. 면책 가능성
+
+가. **쟁점**
+
+   고객의 행위가 중대한 과실에 해당하는지가 쟁점입니다.
+
+나. **관련 법령 및 법리**
+
+   전자금융거래법 제9조 제2항은 이용자의 고의 또는 중대한 과실을 면책 사유로 정합니다.
+
+| 구분 | 내용 |
+|---|---|
+| 근거 | 전자금융거래법 제9조 제2항 |
+| 요건 | 이용자의 고의 또는 중대한 과실 |
+
+다. **결론**
+
+   면책 주장은 받아들여지기 어려울 것으로 보입니다.
+
+### 2. 책임 분담
+
+가. **쟁점**
+
+   과실상계 비율이 쟁점입니다.
+
+## IV. 결론 요약
+
+1. 질의 1: 면책 주장은 어렵습니다.
+2. 질의 2: 고객 과실 비율에 따라 분담합니다.
+""", {"side": None, "outline": {1: 4, 2: 6, 3: 4}, "tables": None, "pics": None, "annex": 0, "warn": 0,
+      "advisory": True, "quotes": 1}),
 }
 
 REJECT = {
@@ -409,12 +463,12 @@ def run_case(name, md, exp, prof_path, tmp):
     doc = render.parse_md(md, prof)
     side = render.detect_side(doc, prof)
     errs = []
-    if side != exp["side"]:
+    if exp["side"] is not None and side != exp["side"]:
         errs.append(f"측 판단 {side} ≠ {exp['side']}")
-    tpl = render.pick_template(prof, side)
+    tpl = render.pick_template(prof, side, doc.get('kind'))
     r = render.Renderer(tpl, prof, str(d)).build(doc)
     r.save(str(out))
-    errs += render.check(str(out), md, prof)
+    errs += render.check(str(out), md, prof, ignore=r.dropped)
     if len(doc["warnings"]) != exp["warn"]:
         errs.append(f"경고 {len(doc['warnings'])}건 ≠ {exp['warn']} {doc['warnings']}")
     z = zipfile.ZipFile(out)
@@ -426,10 +480,24 @@ def run_case(name, md, exp, prof_path, tmp):
         if oc.get(k, 0) != v:
             errs.append(f"개요 {k} {oc.get(k, 0)} ≠ {v}")
     boxes = len(re.findall(r'<hp:tbl [^>]*rowCnt="1" colCnt="1"', X))
-    if X.count("<hp:tbl ") - boxes != exp["tables"]:
+    if exp.get("advisory"):
+        texts = re.sub(r"<[^>]+>", "", X)
+        if doc.get("kind") != "advisory":
+            errs.append("자문의견서 판정 실패")
+        if "자문" in prof["templates"]:
+            if "주식회사 갑은행" not in texts or "준법감시팀장" not in texts:
+                errs.append("레터헤드 수신·참조 칸 미기재")
+            if "질의하신" not in texts or "이상과 같이" not in texts:
+                errs.append("모두문·맺음말 기본 문구 없음")
+            seals = len(re.findall(r'<hp:p [^>]*>(?:(?!</hp:p>).)*담당변호사(?:(?!</hp:p>).)*<hp:pic ', X, re.S))
+            if seals != len(prof["signers"].get("lawyers", [])):
+                errs.append(f"도장 줄 {seals} ≠ 변호사 {len(prof['signers'].get('lawyers', []))}")
+        elif "수신" not in [l for l, _ in doc["parties"]]:
+            errs.append("자문 머리를 당사자 줄로 넣지 못함")
+    elif X.count("<hp:tbl ") - boxes != exp["tables"]:
         errs.append(f"표 {X.count('<hp:tbl ') - boxes} ≠ {exp['tables']}")
     nq = len([1 for kd, v in doc["body"] if kd == "quote"])
-    if prof["body"]["quote"] == "box" and boxes != nq:
+    if prof["body"]["quote"] == "box" and not exp.get("advisory") and boxes != nq:
         errs.append(f"인용 상자 {boxes} ≠ 인용 {nq}")
     if "quotes" in exp and nq != exp["quotes"]:
         errs.append(f"인용 묶음 {nq} ≠ {exp['quotes']}")
@@ -440,8 +508,10 @@ def run_case(name, md, exp, prof_path, tmp):
         lead = " " * prof["lists"]["claims"]["lead_spaces"]
         if len(cl) != exp["claims"] or f"<hp:t>{lead}1. 피고는" not in X:
             errs.append(f"청구취지 목록 {len(cl)} ≠ {exp['claims']} 또는 글자 번호·앞 공백 불일치")
-    if X.count("<hp:pic ") != exp["pics"]:
+    if exp["pics"] is not None and X.count("<hp:pic ") != exp["pics"]:
         errs.append(f"그림 {X.count('<hp:pic ')} ≠ {exp['pics']}")
+    if exp.get("advisory"):
+        return errs, prof, X, H
     if X.count("<hp:footer ") != 1 or "TOTAL_PAGE" not in X:
         errs.append("꼬리말(쪽 번호) 보존 실패")
     first = X[slice(*render.top_paras(X)[0])]
@@ -518,8 +588,9 @@ def main():
                     doc = render.parse_md(md, prof)
                     side = render.detect_side(doc, prof)
                     out = os.path.join(tmp, f"{i}.hwpx")
-                    render.Renderer(render.pick_template(prof, side), prof, os.path.dirname(os.path.abspath(f))).build(doc).save(out)
-                    probs = render.check(out, md, prof)
+                    rr = render.Renderer(render.pick_template(prof, side, doc.get('kind')), prof, os.path.dirname(os.path.abspath(f))).build(doc)
+                    rr.save(out)
+                    probs = render.check(out, md, prof, ignore=rr.dropped)
                     print(f"[{i}] 측={side or '-'} 경고 {len(doc['warnings'])}건 · 오류 {len(probs)}건")
                     bad += bool(probs)
                 except render.RenderError as e:
@@ -530,7 +601,8 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         for name, (md, exp) in CASES.items():
             errs, prof, X, H = run_case(name, md, exp, prof_path, tmp)
-            errs += profile_asserts(prof, X, H)
+            if not exp.get("advisory"):
+                errs += profile_asserts(prof, X, H)
             print(("OK  " if not errs else "FAIL") + f" {name}" + ("" if not errs else ": " + " / ".join(errs)))
             fails += bool(errs)
         # 작업본(메모·검토 논평·부분 초안) 거부

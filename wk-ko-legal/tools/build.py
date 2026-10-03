@@ -346,7 +346,11 @@ def main() -> None:
         for tpl in sorted(hwpx_dir.glob("*.hwpx")):
             with zipfile.ZipFile(tpl) as zt:
                 secs = "".join(zt.read(n).decode("utf-8") for n in zt.namelist() if re.match(r"Contents/section\d+\.xml", n))
-                texts = re.sub(r"\{\{\S+?\}\}", "", "".join(re.findall(r"<hp:t>([^<]*)", secs)))
+                marks = re.findall(r"\{\{([^{}]*)\}\}", secs)
+                bad = [m for m in marks if not re.fullmatch(r"[가-힣]+", m)]
+                if bad:
+                    errors.append(f"{tpl.relative_to(ROOT)}: 표지에 인자·기본 글 {bad[:3]} — 공개 기본양식은 이름 없는 표지만(사무소 문구·변호사명 금지)")
+                texts = re.sub(r"\{\{[^{}]*\}\}", "", "".join(re.findall(r"<hp:t>([^<]*)", secs)))
                 if re.sub(r"[\s/·.,]", "", texts):
                     errors.append(f"{tpl.relative_to(ROOT)}: 표지 외 글 — {texts.strip()[:40]!r}(양식은 표지만 남긴다)")
                 hpf = zt.read("Contents/content.hpf").decode("utf-8")
